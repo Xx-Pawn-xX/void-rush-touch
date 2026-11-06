@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#070d1b">
   <meta name="description" content="VOID//RUSH — survive the collapsing digital universe.">
-  <title>VOID//RUSH — Tilt Edition</title>
+  <title>VOID//RUSH</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,10 +15,9 @@
 </head>
 
 <body>
-  <main class="game">
+  <main class="game" id="game">
 
     <canvas id="gameCanvas"></canvas>
-
     <div class="vignette"></div>
 
     <!-- HUD -->
@@ -48,10 +46,6 @@
         <span>BEST</span>
         <strong id="bestHud">000000</strong>
       </div>
-
-      <button id="calibrateBtn" class="calibrate-btn">
-        ⟳ CALIBRATE
-      </button>
     </header>
 
     <!-- Health -->
@@ -60,16 +54,49 @@
         <span>HULL INTEGRITY</span>
         <strong id="healthText">100%</strong>
       </div>
+
       <div class="health-track">
         <div id="healthFill"></div>
       </div>
     </div>
 
+    <!-- Touch controls -->
+    <div class="mobile-controls" id="mobileControls">
+
+      <!-- Dash: left side -->
+      <button
+        class="dash-btn"
+        id="dashBtn"
+        type="button"
+        aria-label="Dash"
+      >
+        <span class="dash-symbol">✧</span>
+        <strong>DASH</strong>
+        <small id="dashLabel">READY</small>
+      </button>
+
+      <!-- Movement: right side -->
+      <div class="movement-section">
+        <span class="control-caption">MOVEMENT</span>
+
+        <div class="dpad" id="dpad">
+          <button class="pad-btn up" data-dir="up" type="button" aria-label="Move up">▲</button>
+          <button class="pad-btn left" data-dir="left" type="button" aria-label="Move left">◀</button>
+
+          <div class="dpad-center">V</div>
+
+          <button class="pad-btn right" data-dir="right" type="button" aria-label="Move right">▶</button>
+          <button class="pad-btn down" data-dir="down" type="button" aria-label="Move down">▼</button>
+        </div>
+      </div>
+
+    </div>
+
     <!-- Bottom status -->
     <footer class="bottom-hud">
-      <span id="sensorStatus">MOTION SENSOR / STANDBY</span>
+      <span id="controlStatus">TOUCH / KEYBOARD READY</span>
       <span id="runStatus">AWAITING PILOT</span>
-      <span>SPACE: DASH · P: PAUSE</span>
+      <span>ARROWS: MOVE · SPACE: DASH · P: PAUSE</span>
     </footer>
 
     <!-- Start -->
@@ -88,16 +115,18 @@
 
       <div class="instructions">
         <div>
-          <span class="instruction-icon">↔</span>
-          <span>TILT TO MOVE</span>
+          <span class="instruction-icon">✥</span>
+          <span>ARROWS TO MOVE</span>
         </div>
+
         <div>
           <span class="instruction-icon">✧</span>
-          <span>SPACE TO DASH</span>
+          <span>SPACE / DASH BUTTON</span>
         </div>
+
         <div>
-          <span class="instruction-icon">⟳</span>
-          <span>CALIBRATE ANYTIME</span>
+          <span class="instruction-icon">P</span>
+          <span>PAUSE ANYTIME</span>
         </div>
       </div>
 
@@ -106,7 +135,7 @@
       </button>
 
       <p class="permission-note">
-        MOTION SENSOR ACCESS MAY BE REQUIRED
+        SYSTEM READY · NO SENSOR ACCESS REQUIRED
       </p>
     </section>
 
@@ -135,10 +164,12 @@
           <span>FINAL SCORE</span>
           <strong id="finalScore">000000</strong>
         </div>
+
         <div>
           <span>BEST COMBO</span>
           <strong id="finalCombo">x1.0</strong>
         </div>
+
         <div>
           <span>SURVIVAL</span>
           <strong id="finalTime">00:00</strong>
