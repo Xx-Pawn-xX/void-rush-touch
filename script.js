@@ -3,6 +3,7 @@
   "use strict";
 
   const $ = id => document.getElementById(id);
+
   const canvas = $("gameCanvas");
   const ctx = canvas.getContext("2d");
 
@@ -10,44 +11,27 @@
     score: $("scoreHud"),
     combo: $("comboHud"),
     sector: $("sectorHud"),
+    best: $("bestHud"),
     health: $("healthFill"),
     healthText: $("healthText"),
-    bestSide: $("bestSide"),
-    runsSide: $("runsSide"),
-    energy: $("energySide"),
-    kills: $("killsSide"),
-    near: $("nearSide"),
-    bestBottom: $("bestBottom"),
-    runsBottom: $("runsBottom"),
-    shardsBottom: $("shardsBottom"),
-    state: $("runState"),
-    status: $("statusText"),
-    footer: $("footerState"),
-    bars: $("threatBars"),
-    missionProgress: $("missionProgress"),
-    missionCount: $("missionCount"),
-    missionTitle: $("missionTitle"),
-    missionDesc: $("missionDesc"),
+
+    sensor: $("sensorStatus"),
+    status: $("runStatus"),
+
     start: $("startOverlay"),
     pause: $("pauseOverlay"),
     over: $("gameOverOverlay"),
-    levelToast: $("levelToast"),
-    modal: $("upgradeModal"),
-    options: $("upgradeOptions"),
-    toast: $("toast"),
-    dashLabel: $("dashLabel"),
-    dashFlash: $("dashFlash")
+
+    finalScore: $("finalScore"),
+    finalCombo: $("finalCombo"),
+    finalTime: $("finalTime"),
+
+    toast: $("toast")
   };
 
-  const STORE = "voidRushRecords_v1";
+  const STORE = "voidRushTiltRecords_v1";
 
-  const initialRecords = () => ({
-    best: 0,
-    runs: 0,
-    lifetimeShards: 0
-  });
-
-  let records = initialRecords();
+  let records = { best: 0 };
 
   try {
     records = {
@@ -56,269 +40,259 @@
     };
   } catch (_) {}
 
-  let W = 900, H = 560, dpr = 1;
-  let last = 0, raf = 0;
-  let toastTimer = 0, levelTimer = 0;
+  let W = 900;
+  let H = 560;
+  let dpr = 1;
 
   let mode = "menu";
-  let soundOn = true;
-  let audio = null;
+  let raf = 0;
+  let lastTime = 0;
+  let elapsed = 0;
+  let toastTimer = 0;
 
   const keys = new Set();
 
-  // Analog joystick state: -1 to 1 on each axis.
-  const joystick = {
-    active: false,
-    pointerId: null,
+  const tilt = {
     x: 0,
     y: 0,
-    maxRadius: 0,
-    deadZone: 0.12
+    targetX: 0,
+    targetY: 0,
+
+    baseX: null,
+    baseY: null,
+
+    calibrated: false,
+    listening: false,
+    available: false
   };
 
-  const joystickElement = $("joystick");
-  const joystickStick = $("joystickStick");
-
-  let entities = [];
-  let particles = [];
-  let floaters = [];
   let player;
+  let enemies = [];
+  let shards = [];
+  let particles = [];
+  let stars = [];
 
   let score = 0;
-  let energy = 0;
-  let kills = 0;
-  let nearMisses = 0;
-
+  let health = 100;
   let combo = 1;
   let bestCombo = 1;
-
-  let elapsed = 0;
   let sector = 1;
 
   let spawnTimer = 0;
   let shardTimer = 0;
+  let damageTimer = 0;
+
+  let dashCooldown = 0;
+  let dashTime = 0;
+  let dashDirection = { x: 0, y: -1 };
 
   let screenShake = 0;
-  let lastNear = 0;
 
-  let upgrades = {
-    speed: 0,
-    hull: 0,
-    magnet: 0,
-    dash: 0,
-    score: 0
-  };
+  const rand = (a, b) =>
+    Math.random() * (b - a) + a;
 
-  const rand = (a, b) => Math.random() * (b - a) + a;
-  const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+  const clamp = (n, a, b) =>
+    Math.max(a, Math.min(b, n));
 
-  const pad = (n, size = 6) =>
-    String(Math.floor(n)).padStart(size, "0");
+  const pad = n =>
+    String(Math.floor(n)).padStart(6, "0");
 
   const timeText = n =>
     `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(Math.floor(n % 60)).padStart(2, "0")}`;
 
-  /* =====================================================
-     RECORDS
-  ===================================================== */
+  /* ==========================================
+     CANVAS
+  ========================================== */
 
-  function saveRecords() {
+  function resize() {
+    const rect = canvas.getBoundingClientRect();
+
+    W = Math.max(1, rect.width);
+    H = Math.max(1, rect.height);
+
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    if (player) {
+      player.x = clamp(player.x, 25, W - 25);
+      player.y = clamp(player.y, 25, H - 25);
+    }
+
+    createStars();
+  }
+
+  function createStars() {
+    stars = Array.from({ length: 110 }, () => ({
+      x: rand(0, W),
+      y: rand(0, H),
+      size: rand(.5, 1.8),
+      alpha: rand(.15, .75),
+      phase: rand(0, 6.28)
+    }));
+  }
+
+  window.addEventListener("resize", resize);
+  window.addEventListener("orientationchange", () => {
+    setTimeout(resize, 200);
+  });
+
+  /* ==========================================
+     SENSOR CONTROLS
+  ========================================== */
+
+  function sensorAngle() {
+    return (
+      screen.orientation?.angle ??
+      window.orientation ??
+      0
+    );
+  }
+
+  function handleOrientation(event) {
+    if (event.beta === null || event.gamma === null) return;
+
+    let rawX;
+    let rawY;
+
+    const angle = ((sensorAngle() % 360) + 360) % 360;
+
+    if (angle === 90) {
+      rawX = event.beta;
+      rawY = event.gamma;
+    } else if (angle === 270) {
+      rawX = -event.beta;
+      rawY = -event.gamma;
+    } else if (angle === 180) {
+      rawX = -event.gamma;
+      rawY = -event.beta;
+    } else {
+      rawX = event.gamma;
+      rawY = event.beta;
+    }
+
+    tilt.available = true;
+
+    if (!tilt.calibrated) {
+      tilt.baseX = rawX;
+      tilt.baseY = rawY;
+
+      tilt.targetX = 0;
+      tilt.targetY = 0;
+
+      tilt.calibrated = true;
+
+      ui.sensor.textContent = "MOTION SENSOR / CALIBRATED";
+      return;
+    }
+
+    const sensitivity = 22;
+    const deadZone = 3;
+
+    function normalize(value) {
+      const amount = Math.abs(value);
+
+      if (amount < deadZone) return 0;
+
+      return Math.sign(value) *
+        clamp(
+          (amount - deadZone) / (sensitivity - deadZone),
+          0,
+          1
+        );
+    }
+
+    tilt.targetX = normalize(rawX - tilt.baseX);
+    tilt.targetY = normalize(rawY - tilt.baseY);
+  }
+
+  async function enableTilt() {
+    if (tilt.listening) return true;
+
+    if (!("DeviceOrientationEvent" in window)) {
+      ui.sensor.textContent = "MOTION SENSOR / UNSUPPORTED";
+      showToast("MOTION SENSOR NOT AVAILABLE");
+      return false;
+    }
+
     try {
-      localStorage.setItem(STORE, JSON.stringify(records));
-    } catch (_) {}
+      if (
+        typeof DeviceOrientationEvent.requestPermission === "function"
+      ) {
+        const permission =
+          await DeviceOrientationEvent.requestPermission();
 
-    updateRecordUI();
-  }
+        if (permission !== "granted") {
+          ui.sensor.textContent = "MOTION / PERMISSION DENIED";
+          showToast("MOTION ACCESS DENIED — KEYBOARD AVAILABLE");
+          return false;
+        }
+      }
 
-  function updateRecordUI() {
-    ui.bestSide.textContent = pad(records.best);
-    ui.bestBottom.textContent = pad(records.best);
-    ui.runsSide.textContent = pad(records.runs, 2);
-    ui.runsBottom.textContent = pad(records.runs, 2);
-    ui.shardsBottom.textContent = pad(records.lifetimeShards, 3);
-  }
-
-  /* =====================================================
-     GAME STATE
-  ===================================================== */
-
-  function setMode(next) {
-    mode = next;
-
-    const labels = {
-      menu: ["STANDBY", "AWAITING PILOT INPUT"],
-      playing: ["RUN IN PROGRESS", "VOID IS ACTIVE"],
-      paused: ["PAUSED", "RUN SUSPENDED"],
-      over: ["SIGNAL LOST", "RUN TERMINATED"],
-      upgrade: ["EVOLUTION", "SELECT AN UPGRADE"]
-    };
-
-    ui.state.innerHTML =
-      `<span class="live-dot"></span> ${labels[next][0]}`;
-
-    ui.status.textContent =
-      next === "playing" ? "SIGNAL STABLE" :
-      next === "over" ? "SIGNAL LOST" :
-      next === "paused" ? "SYSTEM PAUSED" :
-      "SYSTEM ONLINE";
-
-    ui.footer.textContent = labels[next][1];
-  }
-
-  function showToast(message) {
-    ui.toast.textContent = message;
-    ui.toast.classList.add("show");
-
-    clearTimeout(toastTimer);
-
-    toastTimer = setTimeout(() => {
-      ui.toast.classList.remove("show");
-    }, 1900);
-  }
-
-  /* =====================================================
-     AUDIO
-  ===================================================== */
-
-  function beep(freq = 440, duration = .07, type = "sine", volume = .035) {
-    if (!soundOn) return;
-
-    try {
-      audio ||= new (window.AudioContext || window.webkitAudioContext)();
-
-      if (audio.state === "suspended") audio.resume();
-
-      const osc = audio.createOscillator();
-      const gain = audio.createGain();
-
-      osc.type = type;
-      osc.frequency.setValueAtTime(freq, audio.currentTime);
-
-      gain.gain.setValueAtTime(volume, audio.currentTime);
-      gain.gain.exponentialRampToValueAtTime(
-        .001,
-        audio.currentTime + duration
+      window.addEventListener(
+        "deviceorientation",
+        handleOrientation,
+        true
       );
 
-      osc.connect(gain);
-      gain.connect(audio.destination);
+      tilt.listening = true;
+      tilt.calibrated = false;
 
-      osc.start();
-      osc.stop(audio.currentTime + duration);
-    } catch (_) {}
-  }
+      ui.sensor.textContent = "MOTION SENSOR / WAITING";
 
-  /* =====================================================
-     ANALOG JOYSTICK
-  ===================================================== */
+      return true;
 
-  function resetJoystick() {
-    joystick.active = false;
-    joystick.pointerId = null;
-    joystick.x = 0;
-    joystick.y = 0;
+    } catch (error) {
+      console.error("Motion sensor error:", error);
 
-    if (joystickStick) {
-      joystickStick.style.transform = "translate(-50%, -50%)";
-    }
+      ui.sensor.textContent = "MOTION SENSOR / ERROR";
+      showToast("SENSOR ERROR — KEYBOARD AVAILABLE");
 
-    if (joystickElement) {
-      joystickElement.classList.remove("active");
+      return false;
     }
   }
 
-  function updateJoystick(e) {
-    if (!joystickElement || !joystickStick) return;
+  function calibrateTilt() {
+    tilt.calibrated = false;
 
-    const rect = joystickElement.getBoundingClientRect();
+    tilt.x = 0;
+    tilt.y = 0;
 
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
+    tilt.targetX = 0;
+    tilt.targetY = 0;
 
-    const maxRadius = rect.width * 0.32;
+    ui.sensor.textContent = "CALIBRATING...";
 
-    let dx = e.clientX - centerX;
-    let dy = e.clientY - centerY;
-
-    const distance = Math.hypot(dx, dy);
-
-    if (distance > maxRadius) {
-      dx = dx / distance * maxRadius;
-      dy = dy / distance * maxRadius;
-    }
-
-    const normalizedX = dx / maxRadius;
-    const normalizedY = dy / maxRadius;
-
-    const magnitude = Math.hypot(normalizedX, normalizedY);
-
-    if (magnitude < joystick.deadZone) {
-      joystick.x = 0;
-      joystick.y = 0;
-    } else {
-      joystick.x = normalizedX;
-      joystick.y = normalizedY;
-    }
-
-    joystickStick.style.transform =
-      `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    showToast("HOLD YOUR IPAD LEVEL");
   }
 
-  if (joystickElement) {
-    joystickElement.addEventListener("pointerdown", e => {
-      if (mode !== "playing") return;
+  function updateTilt(dt) {
+    const smoothing = 1 - Math.pow(.0001, dt);
 
-      e.preventDefault();
-
-      joystick.active = true;
-      joystick.pointerId = e.pointerId;
-
-      joystickElement.classList.add("active");
-
-      try {
-        joystickElement.setPointerCapture(e.pointerId);
-      } catch (_) {}
-
-      updateJoystick(e);
-    });
-
-    joystickElement.addEventListener("pointermove", e => {
-      if (!joystick.active || e.pointerId !== joystick.pointerId) return;
-
-      e.preventDefault();
-      updateJoystick(e);
-    });
-
-    const releaseJoystick = e => {
-      if (e.pointerId !== joystick.pointerId) return;
-      resetJoystick();
-    };
-
-    joystickElement.addEventListener("pointerup", releaseJoystick);
-    joystickElement.addEventListener("pointercancel", releaseJoystick);
-    joystickElement.addEventListener("lostpointercapture", () => {
-      if (joystick.active) resetJoystick();
-    });
+    tilt.x += (tilt.targetX - tilt.x) * smoothing;
+    tilt.y += (tilt.targetY - tilt.y) * smoothing;
   }
 
-  /* =====================================================
-     INPUT DIRECTION
-  ===================================================== */
+  /* ==========================================
+     INPUT
+  ========================================== */
 
-  function getInputDirection() {
-    let x = joystick.active ? joystick.x : 0;
-    let y = joystick.active ? joystick.y : 0;
+  function getInput() {
+    let x = tilt.listening ? tilt.x : 0;
+    let y = tilt.listening ? tilt.y : 0;
 
     const keyX =
-      (keys.has("ArrowRight") || keys.has("d") || keys.has("D") ? 1 : 0) -
-      (keys.has("ArrowLeft") || keys.has("a") || keys.has("A") ? 1 : 0);
+      (keys.has("ArrowRight") || keys.has("d") ? 1 : 0) -
+      (keys.has("ArrowLeft") || keys.has("a") ? 1 : 0);
 
     const keyY =
-      (keys.has("ArrowDown") || keys.has("s") || keys.has("S") ? 1 : 0) -
-      (keys.has("ArrowUp") || keys.has("w") || keys.has("W") ? 1 : 0);
+      (keys.has("ArrowDown") || keys.has("s") ? 1 : 0) -
+      (keys.has("ArrowUp") || keys.has("w") ? 1 : 0);
 
-    // Keyboard takes priority while a key is pressed.
-    if (keyX !== 0 || keyY !== 0) {
+    if (keyX || keyY) {
       x = keyX;
       y = keyY;
     }
@@ -333,574 +307,474 @@
     return { x, y };
   }
 
-  /* =====================================================
-     CANVAS
-  ===================================================== */
+  window.addEventListener("keydown", event => {
+    const key = event.key;
 
-  function resize() {
-    const rect = canvas.getBoundingClientRect();
-
-    if (!rect.width || !rect.height) return;
-
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
-
-    W = rect.width;
-    H = rect.height;
-
-    canvas.width = Math.round(W * dpr);
-    canvas.height = Math.round(H * dpr);
-
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    if (player) {
-      player.x = clamp(player.x, 22, W - 22);
-      player.y = clamp(player.y, 22, H - 22);
+    if (
+      ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "]
+      .includes(key)
+    ) {
+      event.preventDefault();
     }
 
-    draw();
-  }
+    keys.add(key);
 
-  window.addEventListener("resize", resize);
+    if (key === " " && mode === "playing") {
+      activateDash();
+    }
 
-  /* =====================================================
-     RESET / START
-  ===================================================== */
+    if (
+      (key === "p" || key === "P" || key === "Escape") &&
+      mode === "playing"
+    ) {
+      pauseRun();
+    } else if (
+      (key === "p" || key === "P" || key === "Escape") &&
+      mode === "paused"
+    ) {
+      resumeRun();
+    }
 
-  function resetRun() {
-    entities = [];
-    particles = [];
-    floaters = [];
+    if (key === "Enter" && mode === "menu") {
+      beginRun();
+    }
+  });
 
+  window.addEventListener("keyup", event => {
+    keys.delete(event.key);
+  });
+
+  window.addEventListener("blur", () => {
     keys.clear();
-    resetJoystick();
 
-    score = 0;
-    energy = 0;
-    kills = 0;
-    nearMisses = 0;
+    if (mode === "playing") {
+      pauseRun();
+    }
+  });
 
-    combo = 1;
-    bestCombo = 1;
+  /* ==========================================
+     GAME SETUP
+  ========================================== */
 
-    elapsed = 0;
-    sector = 1;
-
-    spawnTimer = .8;
-    shardTimer = 1.3;
-
-    screenShake = 0;
-    lastNear = 0;
-
-    upgrades = {
-      speed: 0,
-      hull: 0,
-      magnet: 0,
-      dash: 0,
-      score: 0
-    };
-
-    player = {
+  function newPlayer() {
+    return {
       x: W / 2,
       y: H / 2,
-      r: 10,
       vx: 0,
       vy: 0,
-      hp: 100,
-      maxHp: 100,
-      speed: 220,
-      dashCooldown: 0,
-      dashTime: 0,
-      invuln: 1.2,
-      trail: []
+      radius: 13,
+      invulnerable: 0
     };
-
-    updateHUD();
-    updateMission();
-    draw();
   }
 
-  function startRun() {
+  function resetGame() {
+    player = newPlayer();
+
+    enemies = [];
+    shards = [];
+    particles = [];
+
+    score = 0;
+    health = 100;
+    combo = 1;
+    bestCombo = 1;
+    sector = 1;
+
+    elapsed = 0;
+
+    spawnTimer = .7;
+    shardTimer = 1.8;
+    damageTimer = 0;
+
+    dashCooldown = 0;
+    dashTime = 0;
+
+    screenShake = 0;
+
+    updateHUD();
+  }
+
+  /* ==========================================
+     GAME STATES
+  ========================================== */
+
+  function setMode(next) {
+    mode = next;
+
+    ui.start.classList.toggle("hidden", next !== "menu");
+    ui.pause.classList.toggle("hidden", next !== "paused");
+    ui.over.classList.toggle("hidden", next !== "over");
+
+    ui.status.textContent = {
+      menu: "AWAITING PILOT",
+      playing: "RUN IN PROGRESS",
+      paused: "SYSTEM PAUSED",
+      over: "SIGNAL LOST"
+    }[next];
+  }
+
+  async function beginRun() {
     if (mode === "playing") return;
 
-    cancelAnimationFrame(raf);
-    resetRun();
+    await enableTilt();
 
-    ui.start.classList.add("hidden");
-    ui.pause.classList.add("hidden");
-    ui.over.classList.add("hidden");
-    ui.modal.classList.add("hidden");
+    resetGame();
+    calibrateTilt();
 
     setMode("playing");
 
-    beep(580, .1, "triangle");
+    lastTime = performance.now();
 
-    last = performance.now();
+    cancelAnimationFrame(raf);
     raf = requestAnimationFrame(loop);
   }
 
-  /* =====================================================
-     PAUSE
-  ===================================================== */
-
   function pauseRun() {
-    if (mode === "playing") {
-      setMode("paused");
-      ui.pause.classList.remove("hidden");
-
-      keys.clear();
-      resetJoystick();
-
-      clearPressedButtons();
-      beep(260, .08);
-    } else if (mode === "paused") {
-      ui.pause.classList.add("hidden");
-
-      setMode("playing");
-      last = performance.now();
-
-      raf = requestAnimationFrame(loop);
-    }
-  }
-
-  function clearPressedButtons() {
-    $("dashBtn").classList.remove("pressed");
-  }
-
-  /* =====================================================
-     GAME OVER
-  ===================================================== */
-
-  function endRun() {
     if (mode !== "playing") return;
 
+    setMode("paused");
     cancelAnimationFrame(raf);
+  }
 
+  function resumeRun() {
+    if (mode !== "paused") return;
+
+    setMode("playing");
+
+    lastTime = performance.now();
+    raf = requestAnimationFrame(loop);
+  }
+
+  function endRun() {
     setMode("over");
-    ui.over.classList.remove("hidden");
-
-    records.runs++;
 
     const newBest = score > records.best;
 
-    if (newBest) records.best = score;
-
-    records.lifetimeShards += energy;
-
-    saveRecords();
-
-    $("finalScore").textContent = pad(score);
-    $("finalCombo").textContent = `x${bestCombo.toFixed(1)}`;
-    $("finalTime").textContent = timeText(elapsed);
-
-    $("newBest").classList.toggle("hidden", !newBest);
-
     if (newBest) {
-      beep(880, .3, "triangle", .05);
-    } else {
-      beep(160, .25, "sawtooth", .035);
+      records.best = score;
+
+      try {
+        localStorage.setItem(
+          STORE,
+          JSON.stringify(records)
+        );
+      } catch (_) {}
     }
 
-    keys.clear();
-    resetJoystick();
-    clearPressedButtons();
+    ui.finalScore.textContent = pad(score);
+    ui.finalCombo.textContent = `x${bestCombo.toFixed(1)}`;
+    ui.finalTime.textContent = timeText(elapsed);
+    ui.best.textContent = pad(records.best);
 
-    draw();
+    showToast(newBest ? "NEW PERSONAL BEST!" : "RUN TERMINATED");
+
+    cancelAnimationFrame(raf);
   }
 
-  /* =====================================================
-     ENEMIES
-  ===================================================== */
+  /* ==========================================
+     DASH
+  ========================================== */
+
+  function activateDash() {
+    if (mode !== "playing" || dashCooldown > 0) return;
+
+    const input = getInput();
+
+    let dx = input.x;
+    let dy = input.y;
+
+    if (Math.hypot(dx, dy) < .1) {
+      dx = player.vx;
+      dy = player.vy;
+    }
+
+    const magnitude = Math.hypot(dx, dy);
+
+    if (magnitude < .1) {
+      dx = 0;
+      dy = -1;
+    } else {
+      dx /= magnitude;
+      dy /= magnitude;
+    }
+
+    dashDirection = { x: dx, y: dy };
+
+    dashTime = .18;
+    dashCooldown = 1.5;
+
+    player.invulnerable = .3;
+
+    createBurst(
+      player.x,
+      player.y,
+      "#42d9ff",
+      18
+    );
+
+    showToast("PHASE DASH");
+  }
+
+  /* ==========================================
+     SPAWNING
+  ========================================== */
 
   function spawnEnemy() {
-    const edge = Math.floor(rand(0, 4));
+    const side = Math.floor(rand(0, 4));
 
     let x, y;
 
-    if (edge === 0) {
+    if (side === 0) {
       x = rand(0, W);
-      y = -20;
-    } else if (edge === 1) {
-      x = W + 20;
+      y = -25;
+    } else if (side === 1) {
+      x = W + 25;
       y = rand(0, H);
-    } else if (edge === 2) {
+    } else if (side === 2) {
       x = rand(0, W);
-      y = H + 20;
+      y = H + 25;
     } else {
-      x = -20;
+      x = -25;
       y = rand(0, H);
     }
 
-    const roll = Math.random();
+    const elite = Math.random() < Math.min(.12 + sector * .015, .4);
 
-    const type =
-      roll < .58 ? "seeker" :
-      roll < .82 ? "drifter" :
-      "hunter";
-
-    const speed =
-      (type === "hunter" ? rand(105, 145) :
-       type === "drifter" ? rand(60, 95) :
-       rand(75, 115)) *
-      (1 + Math.min(sector - 1, 10) * .065);
-
-    entities.push({
-      kind: "enemy",
-      type,
+    enemies.push({
       x,
       y,
-      r: type === "hunter" ? 12 :
-         type === "drifter" ? 8 : 10,
-      vx: 0,
-      vy: 0,
-      speed,
-      age: 0,
-      phase: rand(0, 7),
-      color:
-        type === "hunter" ? "#ff557a" :
-        type === "drifter" ? "#c27aff" :
-        "#ff8c6b",
-      near: false
+      radius: elite ? 17 : rand(9, 14),
+      speed: elite ? rand(75, 105) : rand(55, 90) + sector * 3,
+      elite,
+      rotation: rand(0, 6.28),
+      color: elite ? "#f05b70" : "#a879ff"
     });
   }
 
-  /* =====================================================
-     ENERGY SHARDS
-  ===================================================== */
-
-  function spawnShard(
-    x = rand(25, W - 25),
-    y = rand(25, H - 25),
-    value = 1
-  ) {
-    entities.push({
-      kind: "shard",
-      x,
-      y,
-      r: 6,
-      value,
-      phase: rand(0, 7),
-      age: 0
+  function spawnShard() {
+    shards.push({
+      x: rand(35, W - 35),
+      y: rand(35, H - 35),
+      radius: 7,
+      phase: rand(0, 6.28)
     });
   }
 
-  /* =====================================================
-     PARTICLES / FLOATING TEXT
-  ===================================================== */
+  /* ==========================================
+     PARTICLES
+  ========================================== */
 
-  function burst(x, y, color, count = 10, power = 120) {
-    for (let i = 0; i < count; i++) {
-      const a = rand(0, Math.PI * 2);
-      const s = rand(power * .25, power);
+  function createBurst(x, y, color, amount = 12) {
+    for (let i = 0; i < amount; i++) {
+      const angle = rand(0, Math.PI * 2);
+      const speed = rand(35, 180);
 
       particles.push({
-        x, y,
-        vx: Math.cos(a) * s,
-        vy: Math.sin(a) * s,
-        life: rand(.2, .65),
-        max: .65,
-        r: rand(1, 3),
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: rand(.25, .7),
+        maxLife: .7,
+        size: rand(1.5, 4),
         color
       });
     }
   }
 
-  function addFloater(x, y, text, color) {
-    floaters.push({
-      x, y, text, color,
-      life: .8,
-      max: .8
-    });
+  /* ==========================================
+     COLLISIONS
+  ========================================== */
+
+  function damagePlayer(amount) {
+    if (player.invulnerable > 0 || damageTimer > 0) return;
+
+    health = Math.max(0, health - amount);
+
+    player.invulnerable = .9;
+    damageTimer = .2;
+
+    combo = 1;
+    screenShake = 9;
+
+    createBurst(
+      player.x,
+      player.y,
+      "#f05b70",
+      20
+    );
+
+    updateHUD();
+
+    if (health <= 0) {
+      endRun();
+    }
   }
 
-  /* =====================================================
-     DASH
-  ===================================================== */
+  function collectShard(index) {
+    const shard = shards[index];
 
-  function activateDash() {
-    if (mode !== "playing" || !player || player.dashCooldown > 0) {
-      return;
-    }
+    score += 100 * combo;
 
-    // Dash in the current joystick or keyboard direction.
-    let { x: dx, y: dy } = getInputDirection();
+    combo = Math.min(9.9, combo + .2);
+    bestCombo = Math.max(bestCombo, combo);
 
-    if (Math.hypot(dx, dy) < .01) {
-      dx = player.vx;
-      dy = player.vy;
+    createBurst(
+      shard.x,
+      shard.y,
+      "#42d9ff",
+      10
+    );
 
-      if (Math.hypot(dx, dy) < 1) {
-        dx = 1;
-        dy = 0;
+    shards.splice(index, 1);
+
+    updateHUD();
+  }
+
+  /* ==========================================
+     UPDATE
+  ========================================== */
+
+  function update(dt) {
+    if (mode !== "playing") return;
+
+    elapsed += dt;
+
+    updateTilt(dt);
+
+    const input = getInput();
+
+    dashCooldown = Math.max(0, dashCooldown - dt);
+    dashTime = Math.max(0, dashTime - dt);
+
+    damageTimer = Math.max(0, damageTimer - dt);
+
+    player.invulnerable = Math.max(
+      0,
+      player.invulnerable - dt
+    );
+
+    screenShake = Math.max(0, screenShake - dt * 30);
+
+    // Movement
+
+    const acceleration = 760;
+    const maxSpeed = 310;
+
+    if (dashTime > 0) {
+      player.vx = dashDirection.x * 850;
+      player.vy = dashDirection.y * 850;
+    } else {
+      player.vx += input.x * acceleration * dt;
+      player.vy += input.y * acceleration * dt;
+
+      player.vx *= Math.pow(.055, dt);
+      player.vy *= Math.pow(.055, dt);
+
+      const speed = Math.hypot(player.vx, player.vy);
+
+      if (speed > maxSpeed) {
+        player.vx = player.vx / speed * maxSpeed;
+        player.vy = player.vy / speed * maxSpeed;
       }
     }
 
-    const m = Math.hypot(dx, dy) || 1;
+    player.x += player.vx * dt;
+    player.y += player.vy * dt;
 
-    dx /= m;
-    dy /= m;
+    player.x = clamp(player.x, 18, W - 18);
+    player.y = clamp(player.y, 18, H - 18);
 
-    player.vx = dx * (560 + upgrades.dash * 45);
-    player.vy = dy * (560 + upgrades.dash * 45);
+    // Sector progression
 
-    player.dashTime = .19;
+    const nextSector = 1 + Math.floor(elapsed / 25);
 
-    player.dashCooldown = Math.max(
-      .75,
-      1.65 - upgrades.dash * .18
-    );
-
-    player.invuln = .25;
-
-    burst(player.x, player.y, "#42d9ff", 14, 170);
-
-    ui.dashFlash.classList.remove("flash");
-    void ui.dashFlash.offsetWidth;
-    ui.dashFlash.classList.add("flash");
-
-    beep(260, .12, "sawtooth", .025);
-  }
-
-  /* =====================================================
-     DAMAGE
-  ===================================================== */
-
-  function takeDamage(amount = 24) {
-    if (player.invuln > 0 || mode !== "playing") return;
-
-    player.hp = Math.max(0, player.hp - amount);
-    player.invuln = .85;
-
-    screenShake = 9;
-    combo = 1;
-
-    burst(player.x, player.y, "#ff557a", 15, 180);
-    beep(100, .18, "sawtooth", .05);
-
-    updateHUD();
-
-    if (player.hp <= 0) endRun();
-  }
-
-  /* =====================================================
-     COLLECT SHARD
-  ===================================================== */
-
-  function collectShard(e) {
-    energy++;
-
-    score += Math.round(
-      80 * combo * (1 + upgrades.score * .12)
-    );
-
-    combo = Math.min(9.9, combo + .25);
-    bestCombo = Math.max(bestCombo, combo);
-
-    burst(e.x, e.y, "#42d9ff", 9, 100);
-
-    addFloater(
-      e.x,
-      e.y - 8,
-      `+${Math.round(80 * combo)}`,
-      "#42d9ff"
-    );
-
-    beep(520 + energy % 5 * 70, .055, "sine", .025);
-
-    if (energy % 8 === 0 && player.hp < 100) {
-      player.hp = Math.min(100, player.hp + 5);
-
-      addFloater(
-        player.x,
-        player.y - 18,
-        "HULL +5",
-        "#60f4c5"
-      );
+    if (nextSector !== sector) {
+      sector = nextSector;
+      showToast(`SECTOR ${String(sector).padStart(2, "0")}`);
+      updateHUD();
     }
 
-    if (energy > 0 && energy % 10 === 0) {
-      openUpgrade();
-    }
-
-    updateHUD();
-  }
-
-  /* =====================================================
-     UPDATE GAME
-  ===================================================== */
-
-  function update(dt) {
-    elapsed += dt;
-
-    const newSector = 1 + Math.floor(elapsed / 22);
-
-    if (newSector > sector) {
-      sector = newSector;
-      showLevelToast();
-    }
-
-    const input = getInputDirection();
-    const ix = input.x;
-    const iy = input.y;
-
-    const targetSpeed = player.speed + upgrades.speed * 22;
-
-    if (player.dashTime > 0) {
-      player.dashTime -= dt;
-
-      player.x += player.vx * dt;
-      player.y += player.vy * dt;
-
-      player.vx *= Math.pow(.05, dt);
-      player.vy *= Math.pow(.05, dt);
-    } else {
-      const smooth = 1 - Math.pow(.001, dt);
-
-      player.vx += (ix * targetSpeed - player.vx) * smooth;
-      player.vy += (iy * targetSpeed - player.vy) * smooth;
-
-      player.x += player.vx * dt;
-      player.y += player.vy * dt;
-    }
-
-    player.x = clamp(player.x, 14, W - 14);
-    player.y = clamp(player.y, 14, H - 14);
-
-    player.invuln = Math.max(0, player.invuln - dt);
-    player.dashCooldown = Math.max(0, player.dashCooldown - dt);
-
-    player.trail.push({
-      x: player.x,
-      y: player.y,
-      life: .3
-    });
-
-    if (player.trail.length > 12) player.trail.shift();
-
-    player.trail.forEach(t => t.life -= dt);
-    player.trail = player.trail.filter(t => t.life > 0);
+    // Spawn enemies
 
     spawnTimer -= dt;
 
     if (spawnTimer <= 0) {
       spawnEnemy();
 
-      spawnTimer =
-        Math.max(.28, 1.18 - elapsed * .009) *
-        rand(.7, 1.25);
+      spawnTimer = Math.max(
+        .25,
+        1.2 - sector * .075
+      );
     }
+
+    // Spawn shards
 
     shardTimer -= dt;
 
     if (shardTimer <= 0) {
       spawnShard();
-      shardTimer = rand(1.3, 2.4);
+      shardTimer = rand(2.5, 4.2);
     }
 
-    for (let i = entities.length - 1; i >= 0; i--) {
-      const e = entities[i];
+    // Update enemies
 
-      e.age = (e.age || 0) + dt;
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const enemy = enemies[i];
 
-      if (e.kind === "enemy") {
-        const dx = player.x - e.x;
-        const dy = player.y - e.y;
-        const d = Math.hypot(dx, dy) || 1;
+      const dx = player.x - enemy.x;
+      const dy = player.y - enemy.y;
 
-        if (e.type === "drifter") {
-          e.x +=
-            Math.cos(e.age * 2 + e.phase) * 22 * dt +
-            dx / d * e.speed * .45 * dt;
+      const distance = Math.hypot(dx, dy) || 1;
 
-          e.y +=
-            Math.sin(e.age * 2 + e.phase) * 22 * dt +
-            dy / d * e.speed * .45 * dt;
+      enemy.x += dx / distance * enemy.speed * dt;
+      enemy.y += dy / distance * enemy.speed * dt;
 
-        } else if (e.type === "hunter") {
-          e.x += dx / d * e.speed * dt;
-          e.y += dy / d * e.speed * dt;
+      enemy.rotation += dt * 1.5;
 
-        } else {
-          e.vx +=
-            (dx / d * e.speed - e.vx) *
-            Math.min(1, dt * 1.7);
+      if (
+        distance <
+        enemy.radius + player.radius
+      ) {
+        if (dashTime > 0) {
+          score += enemy.elite ? 250 : 100;
 
-          e.vy +=
-            (dy / d * e.speed - e.vy) *
-            Math.min(1, dt * 1.7);
-
-          e.x += e.vx * dt;
-          e.y += e.vy * dt;
-        }
-
-        const gap = Math.hypot(
-          player.x - e.x,
-          player.y - e.y
-        );
-
-        if (gap < e.r + player.r + 1) {
-          if (player.dashTime <= 0) {
-            takeDamage(e.type === "hunter" ? 30 : 22);
-          }
-
-          burst(e.x, e.y, e.color, 8, 90);
-          entities.splice(i, 1);
-
-          kills++;
-          score += 35;
-
-          continue;
-        }
-
-        if (
-          !e.near &&
-          gap < e.r + player.r + 18 &&
-          gap > e.r + player.r + 1 &&
-          elapsed - lastNear > .12
-        ) {
-          e.near = true;
-          lastNear = elapsed;
-
-          nearMisses++;
-          combo = Math.min(9.9, combo + .15);
-          score += Math.round(35 * combo);
-
-          addFloater(
-            player.x,
-            player.y - 22,
-            "NEAR MISS",
-            "#c27aff"
+          createBurst(
+            enemy.x,
+            enemy.y,
+            enemy.color,
+            16
           );
-        }
 
-        if (
-          e.x < -55 || e.x > W + 55 ||
-          e.y < -55 || e.y > H + 55
-        ) {
-          entities.splice(i, 1);
-        }
+          enemies.splice(i, 1);
+          updateHUD();
+        } else {
+          damagePlayer(enemy.elite ? 18 : 10);
 
-      } else {
-        e.phase += dt * 3;
+          if (mode !== "playing") return;
 
-        const dx = player.x - e.x;
-        const dy = player.y - e.y;
-        const d = Math.hypot(dx, dy) || 1;
-
-        if (d < 115 + upgrades.magnet * 35) {
-          e.x += dx / d * (90 + upgrades.magnet * 40) * dt;
-          e.y += dy / d * (90 + upgrades.magnet * 40) * dt;
-        }
-
-        if (d < e.r + player.r + 3) {
-          collectShard(e);
-          entities.splice(i, 1);
-        } else if (e.age > 13) {
-          entities.splice(i, 1);
+          enemy.x -= dx / distance * 24;
+          enemy.y -= dy / distance * 24;
         }
       }
-
-      if (mode !== "playing") return;
     }
+
+    // Collect shards
+
+    for (let i = shards.length - 1; i >= 0; i--) {
+      const shard = shards[i];
+
+      const distance = Math.hypot(
+        player.x - shard.x,
+        player.y - shard.y
+      );
+
+      if (distance < player.radius + shard.radius + 3) {
+        collectShard(i);
+      }
+    }
+
+    // Particles
 
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
@@ -908,621 +782,331 @@
       p.x += p.vx * dt;
       p.y += p.vy * dt;
 
-      p.vx *= Math.pow(.18, dt);
-      p.vy *= Math.pow(.18, dt);
+      p.vx *= Math.pow(.12, dt);
+      p.vy *= Math.pow(.12, dt);
 
       p.life -= dt;
 
-      if (p.life <= 0) particles.splice(i, 1);
+      if (p.life <= 0) {
+        particles.splice(i, 1);
+      }
     }
 
-    for (let i = floaters.length - 1; i >= 0; i--) {
-      floaters[i].y -= 30 * dt;
-      floaters[i].life -= dt;
+    // Passive score
 
-      if (floaters[i].life <= 0) floaters.splice(i, 1);
-    }
-
-    screenShake = Math.max(0, screenShake - dt * 24);
-
-    score +=
-      dt * (5 + sector * 1.8) *
-      (1 + upgrades.score * .12);
+    score += dt * 5;
 
     updateHUD();
-    updateMission();
   }
 
-  /* =====================================================
-     SECTOR TOAST
-  ===================================================== */
+  /* ==========================================
+     DRAWING
+  ========================================== */
 
-  function showLevelToast() {
-    ui.levelToast.innerHTML =
-      `SECTOR ${pad(sector, 2)} <b>+1</b>`;
-
-    ui.levelToast.classList.remove("hidden");
-
-    clearTimeout(levelTimer);
-
-    levelTimer = setTimeout(() => {
-      ui.levelToast.classList.add("hidden");
-    }, 1400);
-
-    addFloater(
-      W / 2,
-      H / 2,
-      `SECTOR ${pad(sector, 2)}`,
-      "#42d9ff"
-    );
-
-    beep(680, .15, "triangle", .03);
-  }
-
-  /* =====================================================
-     HUD
-  ===================================================== */
-
-  function updateHUD() {
-    ui.score.textContent = pad(score);
-    ui.combo.textContent = `x${combo.toFixed(1)}`;
-    ui.sector.textContent = pad(sector, 2);
-
-    ui.health.style.width = `${player ? player.hp : 100}%`;
-    ui.healthText.textContent =
-      `${Math.round(player ? player.hp : 100)}%`;
-
-    ui.energy.textContent = pad(energy, 2);
-    ui.kills.textContent = pad(kills, 2);
-    ui.near.textContent = pad(nearMisses, 2);
-
-    const bars = ui.bars.children;
-
-    for (let i = 0; i < bars.length; i++) {
-      bars[i].classList.toggle(
-        "active",
-        i < Math.min(5, Math.ceil(sector / 2))
-      );
-    }
-
-    ui.dashLabel.textContent =
-      !player || player.dashCooldown <= 0
-        ? "READY"
-        : `${player.dashCooldown.toFixed(1)}s`;
-
-    $("dashBtn").style.opacity =
-      !player || player.dashCooldown <= 0 ? "1" : ".65";
-  }
-
-  function updateMission() {
-    const progress = Math.min(100, elapsed / 30 * 100);
-
-    ui.missionProgress.style.width = `${progress}%`;
-
-    ui.missionCount.textContent =
-      `${Math.min(30, Math.floor(elapsed))} / 30 seconds`;
-
-    if (elapsed >= 30) {
-      ui.missionTitle.textContent = "STAY ALIVE";
-
-      ui.missionDesc.textContent =
-        "The void grows more aggressive with every sector.";
-    } else {
-      ui.missionTitle.textContent = "SURVIVE";
-
-      ui.missionDesc.textContent =
-        "Outlast the collapse. Collect energy. Don't get caught.";
-    }
-  }
-
-  /* =====================================================
-     DRAW BACKGROUND
-  ===================================================== */
-
-  function drawBackground() {
+  function drawBackground(time) {
     ctx.fillStyle = "#070d1b";
     ctx.fillRect(0, 0, W, H);
 
-    const grad = ctx.createRadialGradient(
-      W * .5, H * .5, 0,
-      W * .5, H * .5, Math.max(W, H) * .7
-    );
+    // Grid
 
-    grad.addColorStop(0, "#101d35");
-    grad.addColorStop(1, "#050914");
-
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, W, H);
-
-    const step = 32;
-    const off = (elapsed * 8) % step;
-
-    ctx.strokeStyle = "#3a5b8020";
+    ctx.save();
+    ctx.strokeStyle = "#52749a12";
     ctx.lineWidth = 1;
-    ctx.beginPath();
 
-    for (let x = -step; x < W + step; x += step) {
-      ctx.moveTo(x + off, 0);
-      ctx.lineTo(x + off, H);
+    const grid = 42;
+    const offset = (time * 8) % grid;
+
+    for (let x = -grid; x < W + grid; x += grid) {
+      ctx.beginPath();
+      ctx.moveTo(x + offset, 0);
+      ctx.lineTo(x + offset, H);
+      ctx.stroke();
     }
 
-    for (let y = -step; y < H + step; y += step) {
-      ctx.moveTo(0, y + off);
-      ctx.lineTo(W, y + off);
+    for (let y = -grid; y < H + grid; y += grid) {
+      ctx.beginPath();
+      ctx.moveTo(0, y + offset);
+      ctx.lineTo(W, y + offset);
+      ctx.stroke();
     }
 
-    ctx.stroke();
+    ctx.restore();
 
-    for (let i = 0; i < 55; i++) {
-      const x =
-        (i * 137.7 + Math.sin(i * 3.1) * 40) % W;
+    // Stars
 
-      const y =
-        (i * 83.3 + elapsed * (4 + i % 3)) % H;
+    for (const star of stars) {
+      const pulse =
+        .55 + Math.sin(time * 1.5 + star.phase) * .3;
 
-      ctx.fillStyle =
-        i % 5 === 0 ? "#74dfff77" : "#9bb9e033";
+      ctx.globalAlpha = star.alpha * pulse;
+      ctx.fillStyle = "#b7d8ff";
 
-      ctx.fillRect(x, y, 1.3, 1.3);
+      ctx.fillRect(
+        star.x,
+        star.y,
+        star.size,
+        star.size
+      );
     }
 
-    const pulse = 1 + Math.sin(elapsed * 1.5) * .025;
-
-    ctx.strokeStyle =
-      `rgba(66,217,255,${.08 + Math.sin(elapsed) * .025})`;
-
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-
-    ctx.ellipse(
-      W / 2, H / 2,
-      W * .29 * pulse,
-      H * .33 * pulse,
-      0, 0, Math.PI * 2
-    );
-
-    ctx.stroke();
+    ctx.globalAlpha = 1;
   }
 
-  /* =====================================================
-     DRAW GAME
-  ===================================================== */
+  function drawPlayer(time) {
+    if (!player) return;
 
-  function draw() {
-    if (!ctx) return;
+    const angle = Math.atan2(
+      player.vy,
+      player.vx
+    );
 
     ctx.save();
 
-    if (screenShake > 0 && mode === "playing") {
+    ctx.translate(player.x, player.y);
+
+    if (Math.hypot(player.vx, player.vy) > 8) {
+      ctx.rotate(angle + Math.PI / 2);
+    }
+
+    const flashing =
+      player.invulnerable > 0 &&
+      Math.floor(time * 14) % 2 === 0;
+
+    if (flashing) ctx.globalAlpha = .35;
+
+    // Engine glow
+
+    ctx.shadowBlur = 22;
+    ctx.shadowColor = "#42d9ff";
+
+    ctx.fillStyle = "#42d9ff";
+
+    ctx.beginPath();
+    ctx.moveTo(0, -23);
+    ctx.lineTo(14, 14);
+    ctx.lineTo(0, 8);
+    ctx.lineTo(-14, 14);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = "#eafaff";
+
+    ctx.beginPath();
+    ctx.moveTo(0, -16);
+    ctx.lineTo(5, 7);
+    ctx.lineTo(-5, 7);
+    ctx.closePath();
+    ctx.fill();
+
+    if (dashTime > 0) {
+      ctx.strokeStyle = "#42d9ff";
+      ctx.lineWidth = 2;
+
+      ctx.beginPath();
+      ctx.arc(0, 0, 25, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  function drawEnemies(time) {
+    for (const enemy of enemies) {
+      ctx.save();
+
+      ctx.translate(enemy.x, enemy.y);
+      ctx.rotate(enemy.rotation);
+
+      ctx.shadowBlur = enemy.elite ? 24 : 15;
+      ctx.shadowColor = enemy.color;
+
+      ctx.strokeStyle = enemy.color;
+      ctx.fillStyle = enemy.elite ? "#451b2a" : "#211a3d";
+      ctx.lineWidth = 2;
+
+      ctx.beginPath();
+
+      const sides = enemy.elite ? 6 : 4;
+
+      for (let i = 0; i < sides; i++) {
+        const angle =
+          i / sides * Math.PI * 2 - Math.PI / 4;
+
+        const x = Math.cos(angle) * enemy.radius;
+        const y = Math.sin(angle) * enemy.radius;
+
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.restore();
+    }
+  }
+
+  function drawShards(time) {
+    for (const shard of shards) {
+      const pulse =
+        1 + Math.sin(time * 4 + shard.phase) * .15;
+
+      ctx.save();
+
+      ctx.translate(shard.x, shard.y);
+      ctx.rotate(time * 1.5 + shard.phase);
+      ctx.scale(pulse, pulse);
+
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = "#42d9ff";
+
+      ctx.fillStyle = "#42d9ff";
+
+      ctx.beginPath();
+      ctx.moveTo(0, -shard.radius);
+      ctx.lineTo(shard.radius, 0);
+      ctx.lineTo(0, shard.radius);
+      ctx.lineTo(-shard.radius, 0);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
+    }
+  }
+
+  function drawParticles() {
+    for (const p of particles) {
+      ctx.globalAlpha = clamp(
+        p.life / p.maxLife,
+        0,
+        1
+      );
+
+      ctx.fillStyle = p.color;
+
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.globalAlpha = 1;
+  }
+
+  function render(time) {
+    ctx.save();
+
+    if (screenShake > 0) {
       ctx.translate(
         rand(-screenShake, screenShake),
         rand(-screenShake, screenShake)
       );
     }
 
-    drawBackground();
-
-    entities.forEach(e => {
-      if (e.kind === "shard") {
-        const pulse = 1 + Math.sin(e.phase) * .2;
-
-        ctx.save();
-        ctx.translate(e.x, e.y);
-        ctx.rotate(e.phase * .3);
-
-        ctx.shadowBlur = 17;
-        ctx.shadowColor = "#42d9ff";
-
-        ctx.strokeStyle = "#42d9ff";
-        ctx.fillStyle = "#42d9ff22";
-        ctx.lineWidth = 1.4;
-
-        ctx.beginPath();
-        ctx.moveTo(0, -e.r * pulse);
-        ctx.lineTo(e.r * pulse, 0);
-        ctx.lineTo(0, e.r * pulse);
-        ctx.lineTo(-e.r * pulse, 0);
-        ctx.closePath();
-
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
-
-      } else {
-        ctx.save();
-        ctx.translate(e.x, e.y);
-
-        ctx.rotate(
-          Math.atan2(
-            player ? player.y - e.y : 0,
-            player ? player.x - e.x : 1
-          )
-        );
-
-        ctx.shadowBlur = 14;
-        ctx.shadowColor = e.color;
-
-        ctx.strokeStyle = e.color;
-        ctx.fillStyle = e.color + "18";
-        ctx.lineWidth = 1.5;
-
-        if (e.type === "drifter") {
-          ctx.beginPath();
-
-          for (let j = 0; j < 6; j++) {
-            const a = j * Math.PI / 3;
-            const x = Math.cos(a) * e.r;
-            const y = Math.sin(a) * e.r;
-
-            if (j) ctx.lineTo(x, y);
-            else ctx.moveTo(x, y);
-          }
-
-          ctx.closePath();
-          ctx.fill();
-          ctx.stroke();
-
-        } else {
-          ctx.beginPath();
-          ctx.moveTo(e.r + 3, 0);
-          ctx.lineTo(-e.r * .7, -e.r * .8);
-          ctx.lineTo(-e.r * .45, 0);
-          ctx.lineTo(-e.r * .7, e.r * .8);
-          ctx.closePath();
-
-          ctx.fill();
-          ctx.stroke();
-        }
-
-        ctx.restore();
-      }
-    });
-
-    particles.forEach(p => {
-      ctx.globalAlpha = clamp(p.life / (p.max || .65), 0, 1);
-
-      ctx.fillStyle = p.color;
-      ctx.shadowBlur = 7;
-      ctx.shadowColor = p.color;
-
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-    ctx.globalAlpha = 1;
-    ctx.shadowBlur = 0;
-
-    floaters.forEach(f => {
-      ctx.globalAlpha = clamp(f.life / f.max, 0, 1);
-
-      ctx.font = "10px 'DM Mono', monospace";
-      ctx.textAlign = "center";
-
-      ctx.fillStyle = f.color;
-      ctx.shadowBlur = 8;
-      ctx.shadowColor = f.color;
-
-      ctx.fillText(f.text, f.x, f.y);
-    });
-
-    ctx.globalAlpha = 1;
-    ctx.shadowBlur = 0;
-
-    if (player) {
-      player.trail.forEach(t => {
-        ctx.globalAlpha = (t.life / .3) * .23;
-        ctx.fillStyle = "#42d9ff";
-
-        ctx.beginPath();
-        ctx.arc(
-          t.x, t.y,
-          player.r * (t.life / .3),
-          0, Math.PI * 2
-        );
-        ctx.fill();
-      });
-
-      ctx.globalAlpha = 1;
-
-      const flicker =
-        player.invuln > 0 &&
-        Math.floor(elapsed * 16) % 2 === 0;
-
-      if (!flicker) {
-        ctx.save();
-        ctx.translate(player.x, player.y);
-
-        ctx.rotate(
-          Math.atan2(player.vy, player.vx) + Math.PI / 2
-        );
-
-        ctx.shadowBlur = 22;
-        ctx.shadowColor = "#42d9ff";
-
-        ctx.fillStyle = "#dffaff";
-        ctx.strokeStyle = "#42d9ff";
-        ctx.lineWidth = 1.7;
-
-        ctx.beginPath();
-        ctx.moveTo(0, -13);
-        ctx.lineTo(9, 9);
-        ctx.lineTo(0, 5);
-        ctx.lineTo(-9, 9);
-        ctx.closePath();
-
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.fillStyle = "#42d9ff";
-        ctx.beginPath();
-        ctx.moveTo(-3, 8);
-        ctx.lineTo(0, rand(12, 18));
-        ctx.lineTo(3, 8);
-        ctx.fill();
-
-        ctx.restore();
-
-        ctx.strokeStyle =
-          player.dashCooldown <= 0
-            ? "#42d9ff8a"
-            : "#68809a50";
-
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-
-        ctx.arc(
-          player.x, player.y,
-          17 + Math.sin(elapsed * 5) * 1.5,
-          0, Math.PI * 2
-        );
-
-        ctx.stroke();
-      }
-    }
+    drawBackground(time);
+    drawShards(time);
+    drawEnemies(time);
+    drawParticles();
+    drawPlayer(time);
 
     ctx.restore();
   }
 
-  /* =====================================================
-     GAME LOOP
-  ===================================================== */
+  /* ==========================================
+     HUD
+  ========================================== */
+
+  function updateHUD() {
+    ui.score.textContent = pad(score);
+    ui.combo.textContent = `x${combo.toFixed(1)}`;
+    ui.sector.textContent = String(sector).padStart(2, "0");
+
+    ui.best.textContent = pad(
+      Math.max(records.best, score)
+    );
+
+    ui.healthText.textContent = `${Math.ceil(health)}%`;
+    ui.health.style.width = `${health}%`;
+
+    if (health < 30) {
+      ui.health.style.background =
+        "linear-gradient(90deg,#f05b70,#ff8794)";
+    } else {
+      ui.health.style.background =
+        "linear-gradient(90deg,#36d9a0,#7ef0c5)";
+    }
+  }
+
+  function showToast(message) {
+    ui.toast.textContent = message;
+    ui.toast.classList.add("show");
+
+    clearTimeout(toastTimer);
+
+    toastTimer = setTimeout(() => {
+      ui.toast.classList.remove("show");
+    }, 1500);
+  }
+
+  /* ==========================================
+     MAIN LOOP
+  ========================================== */
 
   function loop(now) {
     if (mode !== "playing") return;
 
-    const dt = Math.min(.033, (now - last) / 1000 || 0);
-    last = now;
+    const dt = Math.min(
+      (now - lastTime) / 1000,
+      .033
+    );
+
+    lastTime = now;
 
     update(dt);
-    draw();
+    render(now / 1000);
 
     if (mode === "playing") {
       raf = requestAnimationFrame(loop);
     }
   }
 
-  /* =====================================================
-     UPGRADES
-  ===================================================== */
-
-  const upgradePool = [
-    {
-      id: "speed",
-      icon: "⚡",
-      name: "PHASE DRIVE",
-      desc: "Move 12% faster. Make the void chase you.",
-      tag: "MOBILITY"
-    },
-    {
-      id: "hull",
-      icon: "◇",
-      name: "REINFORCED HULL",
-      desc: "Restore 35% hull integrity and reinforce your frame.",
-      tag: "SURVIVAL"
-    },
-    {
-      id: "magnet",
-      icon: "✧",
-      name: "SHARD MAGNET",
-      desc: "Collect energy shards from farther away.",
-      tag: "UTILITY"
-    },
-    {
-      id: "dash",
-      icon: "➤",
-      name: "AFTERBURNER",
-      desc: "Dash farther and recover it sooner.",
-      tag: "MOBILITY"
-    },
-    {
-      id: "score",
-      icon: "✦",
-      name: "OVERCHARGE",
-      desc: "Earn 12% more score from every action.",
-      tag: "SCORE"
-    }
-  ];
-
-  function openUpgrade() {
-    if (mode !== "playing") return;
-
-    setMode("upgrade");
-    cancelAnimationFrame(raf);
-    resetJoystick();
-
-    const choices = [...upgradePool]
-      .sort(() => Math.random() - .5)
-      .slice(0, 3);
-
-    ui.options.innerHTML = "";
-
-    choices.forEach(u => {
-      const btn = document.createElement("button");
-
-      btn.className = "upgrade-option";
-
-      btn.innerHTML = `
-        <span class="option-icon">${u.icon}</span>
-        <strong>${u.name}</strong>
-        <p>${u.desc}</p>
-        <em>${u.tag}</em>
-      `;
-
-      btn.addEventListener("click", () => chooseUpgrade(u));
-
-      ui.options.appendChild(btn);
-    });
-
-    ui.modal.classList.remove("hidden");
-    beep(740, .13, "triangle", .035);
-  }
-
-  function chooseUpgrade(u) {
-    upgrades[u.id]++;
-
-    if (u.id === "hull") {
-      player.hp = Math.min(100, player.hp + 35);
-
-      addFloater(
-        player.x, player.y - 20,
-        "HULL REPAIRED", "#60f4c5"
-      );
-    }
-
-    if (u.id === "speed") {
-      player.speed += 22;
-    }
-
-    ui.modal.classList.add("hidden");
-    setMode("playing");
-
-    updateHUD();
-    showToast(`${u.name} PROTOCOL INSTALLED`);
-
-    last = performance.now();
-    raf = requestAnimationFrame(loop);
-  }
-
-  /* =====================================================
+  /* ==========================================
      BUTTONS
-  ===================================================== */
+  ========================================== */
 
-  $("startBtn").addEventListener("click", startRun);
-  $("retryBtn").addEventListener("click", startRun);
-  $("resumeBtn").addEventListener("click", pauseRun);
+  $("startBtn").addEventListener("click", beginRun);
+  $("retryBtn").addEventListener("click", beginRun);
+
+  $("resumeBtn").addEventListener("click", resumeRun);
 
   $("quitBtn").addEventListener("click", () => {
     cancelAnimationFrame(raf);
-
-    ui.pause.classList.add("hidden");
-    ui.start.classList.remove("hidden");
-
-    keys.clear();
-    resetJoystick();
-    clearPressedButtons();
-
     setMode("menu");
-    draw();
   });
 
-  $("dashBtn").addEventListener("pointerdown", e => {
-    e.preventDefault();
-    activateDash();
-  });
-
-  $("soundBtn").addEventListener("click", () => {
-    soundOn = !soundOn;
-
-    $("soundLabel").textContent = soundOn ? "ON" : "OFF";
-    $("soundBtn").style.opacity = soundOn ? "1" : ".65";
-
-    if (soundOn) beep(500, .06);
-  });
-
-  $("resetStatsBtn").addEventListener("click", () => {
-    if (confirm("Reset all local VOID//RUSH records?")) {
-      records = initialRecords();
-      saveRecords();
-      showToast("LOCAL RECORDS RESET");
-    }
-  });
-
-  /* =====================================================
-     DASH BUTTON TOUCH FEEDBACK
-  ===================================================== */
-
-  $("dashBtn").addEventListener("pointerup", () => {
-    $("dashBtn").classList.remove("pressed");
-  });
-
-  $("dashBtn").addEventListener("pointercancel", () => {
-    $("dashBtn").classList.remove("pressed");
-  });
-
-  $("dashBtn").addEventListener("pointerdown", () => {
-    $("dashBtn").classList.add("pressed");
-  });
-
-  /* =====================================================
-     KEYBOARD CONTROLS
-  ===================================================== */
-
-  window.addEventListener("keydown", e => {
-    const key = e.key;
-
-    if (
-      ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "]
-        .includes(key)
-    ) {
-      e.preventDefault();
-    }
-
-    if (key === " " && !e.repeat) {
-      activateDash();
+  $("calibrateBtn").addEventListener("click", () => {
+    if (!tilt.listening) {
+      showToast("START A RUN TO ENABLE MOTION");
       return;
     }
 
-    if (key === "p" || key === "P" || key === "Escape") {
-      if (!e.repeat && ["playing", "paused"].includes(mode)) {
-        pauseRun();
-      }
-      return;
-    }
-
-    keys.add(key);
-
-    if (key === "Enter" && ["menu", "over"].includes(mode)) {
-      startRun();
-    }
+    calibrateTilt();
   });
 
-  window.addEventListener("keyup", e => {
-    keys.delete(e.key);
-  });
-
-  window.addEventListener("blur", () => {
-    keys.clear();
-    resetJoystick();
-    clearPressedButtons();
-
-    if (mode === "playing") pauseRun();
-  });
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden && mode === "playing") {
-      pauseRun();
-    }
-  });
-
-  /* =====================================================
+  /* ==========================================
      INITIALIZE
-  ===================================================== */
+  ========================================== */
 
-  updateRecordUI();
   resize();
-  resetRun();
+
+  player = newPlayer();
+
+  ui.best.textContent = pad(records.best);
+
   setMode("menu");
-  draw();
+
+  render(0);
 
 })();
