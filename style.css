@@ -1,4 +1,3 @@
-
 :root {
   --bg: #070d1b;
   --cyan: #42d9ff;
@@ -31,6 +30,7 @@ body {
 
 button {
   font: inherit;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .game {
@@ -65,7 +65,9 @@ button {
     );
 }
 
-/* HUD */
+/* ==========================================
+   HUD
+========================================== */
 
 .hud {
   position: absolute;
@@ -122,24 +124,9 @@ button {
   font: 16px var(--mono);
 }
 
-.calibrate-btn {
-  padding: 9px 12px;
-  border: 1px solid #42d9ff45;
-  border-radius: 6px;
-  background: #42d9ff0c;
-  color: var(--cyan);
-  font: 10px var(--mono);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: .2s;
-}
-
-.calibrate-btn:hover {
-  background: #42d9ff20;
-  border-color: var(--cyan);
-}
-
-/* Health */
+/* ==========================================
+   HEALTH
+========================================== */
 
 .health-container {
   position: absolute;
@@ -181,7 +168,9 @@ button {
   transition: width .2s, background .2s;
 }
 
-/* Bottom status */
+/* ==========================================
+   BOTTOM STATUS
+========================================== */
 
 .bottom-hud {
   position: absolute;
@@ -199,7 +188,217 @@ button {
   letter-spacing: .6px;
 }
 
-/* Overlays */
+/* ==========================================
+   TOUCH CONTROLS
+========================================== */
+
+.mobile-controls {
+  display: none;
+  position: absolute;
+  z-index: 4;
+
+  left: max(22px, env(safe-area-inset-left));
+  right: max(22px, env(safe-area-inset-right));
+  bottom: max(24px, env(safe-area-inset-bottom));
+
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+/* Only show controls during an active run */
+
+.game[data-mode="playing"] .mobile-controls {
+  display: flex;
+}
+
+/* Dash button — left */
+
+.dash-btn {
+  width: 108px;
+  height: 108px;
+  flex: 0 0 auto;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+
+  border: 1px solid #42d9ff80;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 35%, #193b54, #0b192b 75%);
+
+  color: var(--cyan);
+  box-shadow:
+    0 0 22px #42d9ff16,
+    inset 0 0 18px #42d9ff0d;
+
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+
+  transition:
+    transform .1s,
+    background .1s,
+    border-color .1s,
+    box-shadow .1s;
+}
+
+.dash-btn:active,
+.dash-btn.pressed {
+  transform: scale(.93);
+  border-color: var(--cyan);
+  background:
+    radial-gradient(circle at 50% 35%, #24617c, #10243b 75%);
+  box-shadow:
+    0 0 28px #42d9ff55,
+    inset 0 0 20px #42d9ff20;
+}
+
+.dash-symbol {
+  font-size: 28px;
+  line-height: 1;
+  text-shadow: 0 0 12px #42d9ff90;
+}
+
+.dash-btn strong {
+  font: 700 11px var(--mono);
+  letter-spacing: 1.5px;
+}
+
+.dash-btn small {
+  color: #8aa6bb;
+  font: 8px var(--mono);
+  letter-spacing: 1px;
+}
+
+.dash-btn.cooldown {
+  opacity: .62;
+  border-color: #52677d;
+  color: #91a2b5;
+  box-shadow: none;
+}
+
+/* D-pad — right */
+
+.movement-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+
+  pointer-events: auto;
+}
+
+.control-caption {
+  color: #71849d;
+  font: 8px var(--mono);
+  letter-spacing: 1.6px;
+}
+
+.dpad {
+  position: relative;
+
+  width: 132px;
+  height: 112px;
+
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 4px;
+
+  touch-action: none;
+}
+
+.pad-btn {
+  display: grid;
+  place-items: center;
+
+  border: 1px solid #52677d80;
+  border-radius: 9px;
+
+  background: linear-gradient(145deg, #17283d, #0c192b);
+  color: #c0d2e7;
+
+  font-size: 17px;
+  font-weight: 800;
+
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: none;
+
+  transition:
+    background .08s,
+    border-color .08s,
+    color .08s,
+    transform .08s;
+
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pad-btn:active,
+.pad-btn.pressed {
+  background: #163e5c;
+  border-color: var(--cyan);
+  color: var(--cyan);
+  transform: scale(.94);
+  box-shadow: 0 0 13px #42d9ff25;
+}
+
+.pad-btn.up {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.pad-btn.left {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.pad-btn.right {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.pad-btn.down {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.dpad-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+
+  width: 30px;
+  height: 30px;
+
+  display: grid;
+  place-items: center;
+
+  transform: translate(-50%, -50%);
+
+  border: 1px solid #52677d70;
+  border-radius: 50%;
+  background: #0b1728;
+
+  color: #60758d;
+  font: 10px var(--mono);
+
+  pointer-events: none;
+}
+
+/* ==========================================
+   OVERLAYS
+========================================== */
 
 .overlay {
   position: absolute;
@@ -345,7 +544,9 @@ button {
   color: var(--white);
 }
 
-/* Game over */
+/* ==========================================
+   GAME OVER
+========================================== */
 
 .danger {
   color: var(--red);
@@ -373,7 +574,9 @@ button {
   font: 19px var(--mono);
 }
 
-/* Toast */
+/* ==========================================
+   TOAST
+========================================== */
 
 .toast {
   position: absolute;
@@ -400,7 +603,9 @@ button {
   opacity: 1;
 }
 
-/* Portrait warning */
+/* ==========================================
+   PORTRAIT WARNING
+========================================== */
 
 #orientationWarning {
   display: none;
@@ -424,7 +629,9 @@ button {
   }
 }
 
-/* Compact landscape screens */
+/* ==========================================
+   COMPACT LANDSCAPE SCREENS
+========================================== */
 
 @media (max-height: 520px) {
   .hud {
@@ -432,7 +639,7 @@ button {
   }
 
   .health-container {
-    bottom: 29px;
+    bottom: 145px;
   }
 
   .bottom-hud {
@@ -465,7 +672,29 @@ button {
   .permission-note {
     margin-top: 8px;
   }
+
+  .mobile-controls {
+    bottom: 15px;
+  }
+
+  .dash-btn {
+    width: 88px;
+    height: 88px;
+  }
+
+  .dpad {
+    width: 116px;
+    height: 94px;
+  }
+
+  .pad-btn {
+    font-size: 14px;
+  }
 }
+
+/* ==========================================
+   SMALLER SCREENS
+========================================== */
 
 @media (max-width: 850px) {
   .hud {
@@ -490,11 +719,6 @@ button {
     font-size: 13px;
   }
 
-  .calibrate-btn {
-    padding: 8px;
-    font-size: 8px;
-  }
-
   .bottom-hud {
     left: 14px;
     right: 14px;
@@ -510,6 +734,31 @@ button {
     display: none;
   }
 }
+
+/* ==========================================
+   TOUCH DEVICES
+========================================== */
+
+@media (pointer: coarse) {
+  .mobile-controls {
+    display: none;
+  }
+
+  .game[data-mode="playing"] .mobile-controls {
+    display: flex;
+  }
+
+  .pad-btn,
+  .dash-btn {
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+
+/* ==========================================
+   REDUCED MOTION
+========================================== */
 
 @media (prefers-reduced-motion: reduce) {
   *,
