@@ -15,7 +15,7 @@
 </head>
 
 <body>
-  <main class="game" id="game">
+  <main class="game">
 
     <canvas id="gameCanvas"></canvas>
     <div class="vignette"></div>
@@ -60,44 +60,48 @@
       </div>
     </div>
 
-    <!-- Touch controls -->
-    <div class="mobile-controls" id="mobileControls">
-
-      <!-- Dash: left side -->
-      <button
-        class="dash-btn"
-        id="dashBtn"
-        type="button"
-        aria-label="Dash"
-      >
-        <span class="dash-symbol">✧</span>
-        <strong>DASH</strong>
-        <small id="dashLabel">READY</small>
-      </button>
-
-      <!-- Movement: right side -->
-      <div class="movement-section">
-        <span class="control-caption">MOVEMENT</span>
-
-        <div class="dpad" id="dpad">
-          <button class="pad-btn up" data-dir="up" type="button" aria-label="Move up">▲</button>
-          <button class="pad-btn left" data-dir="left" type="button" aria-label="Move left">◀</button>
-
-          <div class="dpad-center">V</div>
-
-          <button class="pad-btn right" data-dir="right" type="button" aria-label="Move right">▶</button>
-          <button class="pad-btn down" data-dir="down" type="button" aria-label="Move down">▼</button>
-        </div>
-      </div>
-
-    </div>
-
     <!-- Bottom status -->
     <footer class="bottom-hud">
-      <span id="controlStatus">TOUCH / KEYBOARD READY</span>
+      <span id="sensorStatus">TOUCH / KEYBOARD READY</span>
       <span id="runStatus">AWAITING PILOT</span>
       <span>ARROWS: MOVE · SPACE: DASH · P: PAUSE</span>
     </footer>
+
+    <!-- MOBILE CONTROLS -->
+    <div class="mobile-controls">
+
+      <!-- DASH: LEFT -->
+      <button id="dashBtn" class="dash-control" aria-label="Dash">
+        <span class="dash-icon">✦</span>
+        <span class="dash-text">DASH</span>
+        <span class="dash-key">SPACE</span>
+      </button>
+
+      <!-- LARGE D-PAD: RIGHT -->
+      <div class="dpad" aria-label="Movement controls">
+
+        <button class="pad-btn up" data-dir="up" aria-label="Move up">
+          ▲
+        </button>
+
+        <button class="pad-btn left" data-dir="left" aria-label="Move left">
+          ◀
+        </button>
+
+        <div class="dpad-center">
+          <span>V</span>
+        </div>
+
+        <button class="pad-btn right" data-dir="right" aria-label="Move right">
+          ▶
+        </button>
+
+        <button class="pad-btn down" data-dir="down" aria-label="Move down">
+          ▼
+        </button>
+
+      </div>
+    </div>
 
     <!-- Start -->
     <section class="overlay" id="startOverlay">
@@ -115,13 +119,13 @@
 
       <div class="instructions">
         <div>
-          <span class="instruction-icon">✥</span>
+          <span class="instruction-icon">↔</span>
           <span>ARROWS TO MOVE</span>
         </div>
 
         <div>
           <span class="instruction-icon">✧</span>
-          <span>SPACE / DASH BUTTON</span>
+          <span>DASH TO SURVIVE</span>
         </div>
 
         <div>
@@ -135,7 +139,7 @@
       </button>
 
       <p class="permission-note">
-        SYSTEM READY · NO SENSOR ACCESS REQUIRED
+        THE VOID IS WAITING.
       </p>
     </section>
 
