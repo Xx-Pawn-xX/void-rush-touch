@@ -5,7 +5,6 @@
 
   const canvas = $("gameCanvas");
   const ctx = canvas.getContext("2d");
-  const game = $("game");
 
   const ui = {
     score: $("scoreHud"),
@@ -15,7 +14,7 @@
     health: $("healthFill"),
     healthText: $("healthText"),
 
-    controlStatus: $("controlStatus"),
+    sensor: $("sensorStatus"),
     status: $("runStatus"),
 
     start: $("startOverlay"),
@@ -26,13 +25,10 @@
     finalCombo: $("finalCombo"),
     finalTime: $("finalTime"),
 
-    dash: $("dashBtn"),
-    dashLabel: $("dashLabel"),
-
     toast: $("toast")
   };
 
-  const STORE = "voidRushTiltRecords_v1";
+  const STORE = "voidRushTouchRecords_v1";
 
   let records = { best: 0 };
 
@@ -54,7 +50,7 @@
   let toastTimer = 0;
 
   const keys = new Set();
-  const touchDirections = new Set();
+  const touchDirs = new Set();
 
   let player;
   let enemies = [];
@@ -132,92 +128,19 @@
   });
 
   /* ==========================================
-     TOUCH INPUT
-  ========================================== */
-
-  function clearTouchInput() {
-    touchDirections.clear();
-
-    document.querySelectorAll(".pad-btn").forEach(btn => {
-      btn.classList.remove("pressed");
-    });
-
-    ui.dash.classList.remove("pressed");
-  }
-
-  document.querySelectorAll(".pad-btn").forEach(btn => {
-    const direction = btn.dataset.dir;
-
-    btn.addEventListener("pointerdown", event => {
-      if (mode !== "playing") return;
-
-      event.preventDefault();
-
-      touchDirections.add(direction);
-      btn.classList.add("pressed");
-
-      try {
-        btn.setPointerCapture(event.pointerId);
-      } catch (_) {}
-    });
-
-    function releaseDirection(event) {
-      touchDirections.delete(direction);
-      btn.classList.remove("pressed");
-    }
-
-    btn.addEventListener("pointerup", releaseDirection);
-    btn.addEventListener("pointercancel", releaseDirection);
-    btn.addEventListener("lostpointercapture", releaseDirection);
-  });
-
-  /* ==========================================
-     INPUT DIRECTION
+     INPUT
   ========================================== */
 
   function getInput() {
     let x =
-      (touchDirections.has("right") ? 1 : 0) -
-      (touchDirections.has("left") ? 1 : 0);
+      (keys.has("ArrowRight") || keys.has("d") || touchDirs.has("right") ? 1 : 0) -
+      (keys.has("ArrowLeft") || keys.has("a") || touchDirs.has("left") ? 1 : 0);
 
     let y =
-      (touchDirections.has("down") ? 1 : 0) -
-      (touchDirections.has("up") ? 1 : 0);
-
-    const keyX =
-      (
-        keys.has("ArrowRight") ||
-        keys.has("d") ||
-        keys.has("D") ? 1 : 0
-      ) -
-      (
-        keys.has("ArrowLeft") ||
-        keys.has("a") ||
-        keys.has("A") ? 1 : 0
-      );
-
-    const keyY =
-      (
-        keys.has("ArrowDown") ||
-        keys.has("s") ||
-        keys.has("S") ? 1 : 0
-      ) -
-      (
-        keys.has("ArrowUp") ||
-        keys.has("w") ||
-        keys.has("W") ? 1 : 0
-      );
-
-    // Keyboard input takes priority when used.
-
-    if (keyX !== 0 || keyY !== 0) {
-      x = keyX;
-      y = keyY;
-    }
+      (keys.has("ArrowDown") || keys.has("s") || touchDirs.has("down") ? 1 : 0) -
+      (keys.has("ArrowUp") || keys.has("w") || touchDirs.has("up") ? 1 : 0);
 
     const magnitude = Math.hypot(x, y);
-
-    // Prevent diagonal movement from being faster.
 
     if (magnitude > 1) {
       x /= magnitude;
@@ -227,21 +150,12 @@
     return { x, y };
   }
 
-  /* ==========================================
-     KEYBOARD
-  ========================================== */
-
   window.addEventListener("keydown", event => {
     const key = event.key;
 
     if (
-      [
-        "ArrowUp",
-        "ArrowDown",
-        "ArrowLeft",
-        "ArrowRight",
-        " "
-      ].includes(key)
+      ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "]
+      .includes(key)
     ) {
       event.preventDefault();
     }
@@ -275,12 +189,67 @@
 
   window.addEventListener("blur", () => {
     keys.clear();
-    clearTouchInput();
+    touchDirs.clear();
+
+    document.querySelectorAll(".pressed").forEach(button => {
+      button.classList.remove("pressed");
+    });
 
     if (mode === "playing") {
       pauseRun();
     }
   });
+
+  /* ==========================================
+     TOUCH D-PAD
+  ========================================== */
+
+  document.querySelectorAll(".pad-btn").forEach(button => {
+    const direction = button.dataset.dir;
+
+    button.addEventListener("pointerdown", event => {
+      event.preventDefault();
+
+      button.setPointerCapture(event.pointerId);
+      touchDirs.add(direction);
+      button.classList.add("pressed");
+    });
+
+    function releaseDirection(event) {
+      if (event) event.preventDefault();
+
+      touchDirs.delete(direction);
+      button.classList.remove("pressed");
+    }
+
+    button.addEventListener("pointerup", releaseDirection);
+    button.addEventListener("pointercancel", releaseDirection);
+    button.addEventListener("lostpointercapture", releaseDirection);
+  });
+
+  /* ==========================================
+     DASH BUTTON
+  ========================================== */
+
+  const dashButton = $("dashBtn");
+
+  dashButton.addEventListener("pointerdown", event => {
+    event.preventDefault();
+
+    dashButton.setPointerCapture(event.pointerId);
+    dashButton.classList.add("pressed");
+
+    activateDash();
+  });
+
+  function releaseDash(event) {
+    if (event) event.preventDefault();
+    dashButton.classList.remove("pressed");
+  }
+
+  dashButton.addEventListener("pointerup", releaseDash);
+  dashButton.addEventListener("pointercancel", releaseDash);
+  dashButton.addEventListener("lostpointercapture", releaseDash);
 
   /* ==========================================
      GAME SETUP
@@ -304,6 +273,8 @@
     shards = [];
     particles = [];
 
+    touchDirs.clear();
+
     score = 0;
     health = 100;
     combo = 1;
@@ -319,11 +290,8 @@
     dashCooldown = 0;
     dashTime = 0;
 
-    dashDirection = { x: 0, y: -1 };
-
     screenShake = 0;
 
-    clearTouchInput();
     updateHUD();
   }
 
@@ -333,8 +301,6 @@
 
   function setMode(next) {
     mode = next;
-
-    game.dataset.mode = next;
 
     ui.start.classList.toggle("hidden", next !== "menu");
     ui.pause.classList.toggle("hidden", next !== "paused");
@@ -347,10 +313,7 @@
       over: "SIGNAL LOST"
     }[next];
 
-    if (next !== "playing") {
-      clearTouchInput();
-      keys.clear();
-    }
+    ui.sensor.textContent = "TOUCH / KEYBOARD READY";
   }
 
   function beginRun() {
@@ -368,6 +331,13 @@
 
   function pauseRun() {
     if (mode !== "playing") return;
+
+    touchDirs.clear();
+    keys.clear();
+
+    document.querySelectorAll(".pressed").forEach(button => {
+      button.classList.remove("pressed");
+    });
 
     setMode("paused");
     cancelAnimationFrame(raf);
@@ -403,9 +373,7 @@
     ui.finalTime.textContent = timeText(elapsed);
     ui.best.textContent = pad(records.best);
 
-    showToast(
-      newBest ? "NEW PERSONAL BEST!" : "RUN TERMINATED"
-    );
+    showToast(newBest ? "NEW PERSONAL BEST!" : "RUN TERMINATED");
 
     cancelAnimationFrame(raf);
   }
@@ -452,33 +420,7 @@
     );
 
     showToast("PHASE DASH");
-
-    updateHUD();
   }
-
-  // Touch dash button
-
-  ui.dash.addEventListener("pointerdown", event => {
-    if (mode !== "playing") return;
-
-    event.preventDefault();
-
-    activateDash();
-
-    ui.dash.classList.add("pressed");
-
-    try {
-      ui.dash.setPointerCapture(event.pointerId);
-    } catch (_) {}
-  });
-
-  function releaseDash() {
-    ui.dash.classList.remove("pressed");
-  }
-
-  ui.dash.addEventListener("pointerup", releaseDash);
-  ui.dash.addEventListener("pointercancel", releaseDash);
-  ui.dash.addEventListener("lostpointercapture", releaseDash);
 
   /* ==========================================
      SPAWNING
@@ -503,16 +445,13 @@
       y = rand(0, H);
     }
 
-    const elite =
-      Math.random() < Math.min(.12 + sector * .015, .4);
+    const elite = Math.random() < Math.min(.12 + sector * .015, .4);
 
     enemies.push({
       x,
       y,
       radius: elite ? 17 : rand(9, 14),
-      speed: elite
-        ? rand(75, 105)
-        : rand(55, 90) + sector * 3,
+      speed: elite ? rand(75, 105) : rand(55, 90) + sector * 3,
       elite,
       rotation: rand(0, 6.28),
       color: elite ? "#f05b70" : "#a879ff"
@@ -657,11 +596,7 @@
 
     if (nextSector !== sector) {
       sector = nextSector;
-
-      showToast(
-        `SECTOR ${String(sector).padStart(2, "0")}`
-      );
-
+      showToast(`SECTOR ${String(sector).padStart(2, "0")}`);
       updateHUD();
     }
 
@@ -739,10 +674,7 @@
         player.y - shard.y
       );
 
-      if (
-        distance <
-        player.radius + shard.radius + 3
-      ) {
+      if (distance < player.radius + shard.radius + 3) {
         collectShard(i);
       }
     }
@@ -1010,19 +942,6 @@
       ui.health.style.background =
         "linear-gradient(90deg,#36d9a0,#7ef0c5)";
     }
-
-    // Dash cooldown display
-
-    if (dashCooldown > 0) {
-      ui.dashLabel.textContent =
-        `${dashCooldown.toFixed(1)}s`;
-
-      ui.dash.classList.add("cooldown");
-    } else {
-      ui.dashLabel.textContent = "READY";
-
-      ui.dash.classList.remove("cooldown");
-    }
   }
 
   function showToast(message) {
@@ -1069,8 +988,8 @@
 
   $("quitBtn").addEventListener("click", () => {
     cancelAnimationFrame(raf);
+    touchDirs.clear();
     setMode("menu");
-    render(performance.now() / 1000);
   });
 
   /* ==========================================
