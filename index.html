@@ -1,375 +1,162 @@
-<!doctype html>
+
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f4f5f7">
+  <meta name="theme-color" content="#070d1b">
   <meta name="description" content="VOID//RUSH — survive the collapsing digital universe.">
-  <title>VOID//RUSH — Arcade Survival</title>
+  <title>VOID//RUSH — Tilt Edition</title>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
-  <div class="app-shell">
+  <main class="game">
 
-    <header class="topbar">
-      <a class="brand" href="#">
-        <span class="brand-mark">V</span>
-        <span>VOID<span class="slash">//</span>RUSH</span>
-      </a>
+    <canvas id="gameCanvas"></canvas>
 
-      <div class="top-status">
-        <span class="live-dot"></span>
-        <span id="statusText">SYSTEM ONLINE</span>
+    <div class="vignette"></div>
+
+    <!-- HUD -->
+    <header class="hud">
+      <div class="hud-brand">
+        <span class="brand-icon">V</span>
+        <span>VOID<span class="cyan">//</span>RUSH</span>
       </div>
 
-      <div class="top-actions">
-        <span class="build-label">BUILD 1.0</span>
-        <button class="icon-btn" id="soundBtn" aria-label="Toggle sound">
-          ♫ <span id="soundLabel">ON</span>
-        </button>
+      <div class="hud-stat">
+        <span>SCORE</span>
+        <strong id="scoreHud">000000</strong>
       </div>
+
+      <div class="hud-stat">
+        <span>COMBO</span>
+        <strong class="cyan" id="comboHud">x1.0</strong>
+      </div>
+
+      <div class="hud-stat">
+        <span>SECTOR</span>
+        <strong id="sectorHud">01</strong>
+      </div>
+
+      <div class="hud-stat best-stat">
+        <span>BEST</span>
+        <strong id="bestHud">000000</strong>
+      </div>
+
+      <button id="calibrateBtn" class="calibrate-btn">
+        ⟳ CALIBRATE
+      </button>
     </header>
 
-    <main>
-      <section class="game-layout">
-
-        <!-- GAME ARENA -->
-        <section class="arena-column">
-
-          <div class="arena-heading">
-            <div>
-              <div class="eyebrow">SIMULATION / UNSTABLE SPACE</div>
-              <h1>THE <span>VOID</span></h1>
-            </div>
-
-            <div class="run-state" id="runState">
-              <span class="live-dot"></span> STANDBY
-            </div>
-          </div>
-
-          <div class="arena-wrap" id="arenaWrap">
-            <canvas id="gameCanvas" aria-label="Void Rush game arena"></canvas>
-
-            <div class="arena-grid"></div>
-            <div class="arena-vignette"></div>
-
-            <div class="hud hud-top">
-              <div class="hud-item">
-                <span>SCORE</span>
-                <strong id="scoreHud">000000</strong>
-              </div>
-
-              <div class="hud-item">
-                <span>COMBO</span>
-                <strong id="comboHud">x1.0</strong>
-              </div>
-
-              <div class="hud-item">
-                <span>SECTOR</span>
-                <strong id="sectorHud">01</strong>
-              </div>
-            </div>
-
-            <div class="health-wrap">
-              <div class="health-heading">
-                <span>HULL INTEGRITY</span>
-                <strong id="healthText">100%</strong>
-              </div>
-              <div class="health-track">
-                <div id="healthFill"></div>
-              </div>
-            </div>
-
-            <!-- START -->
-            <div class="overlay" id="startOverlay">
-              <div class="overlay-kicker">
-                <span class="live-dot"></span> SIGNAL DETECTED
-              </div>
-
-              <div class="big-logo">VOID<span>//</span>RUSH</div>
-
-              <p class="overlay-sub">
-                THE UNIVERSE IS COLLAPSING.<br>
-                <b>HOW LONG CAN YOU LAST?</b>
-              </p>
-
-              <button class="primary-btn" id="startBtn">
-                INITIALIZE RUN <span>↗</span>
-              </button>
-
-              <div class="key-hint">
-                <kbd>WASD</kbd> / <kbd>ARROWS</kbd> MOVE
-                <span>·</span>
-                <kbd>SPACE</kbd> DASH
-                <span>·</span>
-                <kbd>P</kbd> PAUSE
-              </div>
-            </div>
-
-            <!-- PAUSE -->
-            <div class="overlay hidden" id="pauseOverlay">
-              <div class="overlay-kicker">SYSTEM PAUSED</div>
-              <div class="big-logo small-logo">TAKE A <span>BREATH.</span></div>
-              <p class="overlay-sub">THE VOID CAN WAIT. FOR A MOMENT.</p>
-
-              <button class="primary-btn" id="resumeBtn">
-                RESUME RUN <span>▶</span>
-              </button>
-
-              <button class="text-btn" id="quitBtn">ABANDON RUN</button>
-            </div>
-
-            <!-- GAME OVER -->
-            <div class="overlay hidden" id="gameOverOverlay">
-              <div class="overlay-kicker danger-kicker">SIGNAL LOST</div>
-              <div class="big-logo small-logo">RUN <span>ENDED.</span></div>
-              <p class="overlay-sub">THE VOID CLAIMS ANOTHER PILOT.</p>
-
-              <div class="final-stats">
-                <div>
-                  <span>FINAL SCORE</span>
-                  <strong id="finalScore">000000</strong>
-                </div>
-                <div>
-                  <span>BEST COMBO</span>
-                  <strong id="finalCombo">x1.0</strong>
-                </div>
-                <div>
-                  <span>SURVIVAL</span>
-                  <strong id="finalTime">00:00</strong>
-                </div>
-              </div>
-
-              <div id="newBest" class="new-best hidden">
-                ✦ NEW PERSONAL BEST ✦
-              </div>
-
-              <button class="primary-btn" id="retryBtn">
-                RUN IT BACK <span>↻</span>
-              </button>
-            </div>
-
-            <div class="level-toast hidden" id="levelToast">
-              SECTOR UPGRADED <b>+1</b>
-            </div>
-
-            <div class="dash-flash" id="dashFlash"></div>
-          </div>
-
-          <div class="arena-footer">
-            <span>
-              <i class="tiny-dot"></i>
-              <span id="footerState">AWAITING PILOT INPUT</span>
-            </span>
-            <span>VOID//RUSH <b>◆</b> ONLINE</span>
-          </div>
-
-          <!-- TOUCH CONTROLS -->
-<div class="mobile-controls" id="mobileControls">
-
-  <div class="movement-section">
-    <div class="control-caption">MOVEMENT</div>
-
-    <div class="joystick" id="joystick">
-      <div class="joystick-ring">
-        <div class="joystick-stick" id="joystickStick"></div>
+    <!-- Health -->
+    <div class="health-container">
+      <div class="health-labels">
+        <span>HULL INTEGRITY</span>
+        <strong id="healthText">100%</strong>
+      </div>
+      <div class="health-track">
+        <div id="healthFill"></div>
       </div>
     </div>
-  </div>
 
-  <button class="dash-btn" id="dashBtn">
-    <span class="dash-symbol">✧</span>
-    <b>DASH</b>
-    <small id="dashLabel">READY</small>
-  </button>
-
-</div>
-
-          </div>
-        </section>
-
-        <!-- RIGHT TELEMETRY -->
-        <aside class="side-panel right-panel">
-
-          <div class="panel-heading">
-            <span class="eyebrow">PILOT PROFILE</span>
-            <span class="profile-tag">ROGUE-07</span>
-          </div>
-
-          <div class="pilot-card">
-            <div class="pilot-avatar">◈</div>
-            <div>
-              <strong>ROGUE-07</strong>
-              <small>VOID RUNNER</small>
-            </div>
-          </div>
-
-          <div class="panel-divider"></div>
-
-          <div class="eyebrow section-label">RUN TELEMETRY</div>
-
-          <div class="telemetry-main">
-            <span>ENERGY COLLECTED</span>
-            <strong id="energySide">00</strong>
-            <small>◆ SHARDS</small>
-          </div>
-
-          <div class="stat-block">
-            <span>PERSONAL BEST</span>
-            <strong id="bestSide">000000</strong>
-          </div>
-
-          <div class="stat-block">
-            <span>RUNS COMPLETED</span>
-            <strong id="runsSide">00</strong>
-          </div>
-
-          <div class="stat-block">
-            <span>ELIMINATIONS</span>
-            <strong id="killsSide">00</strong>
-          </div>
-
-          <div class="stat-block">
-            <span>NEAR-MISSES</span>
-            <strong id="nearSide">00</strong>
-          </div>
-
-          <div class="panel-divider"></div>
-
-          <div class="threat-section">
-            <div class="threat-heading">
-              <span class="eyebrow">THREAT LEVEL</span>
-              <span>01—05</span>
-            </div>
-
-            <div class="threat-bars" id="threatBars">
-              <i></i><i></i><i></i><i></i><i></i>
-            </div>
-          </div>
-
-          <div class="mission-card">
-            <div class="mission-top">
-              <span>✦</span> CURRENT OBJECTIVE
-            </div>
-
-            <strong id="missionTitle">SURVIVE</strong>
-            <p id="missionDesc">
-              Outlast the collapse. Collect energy. Don't get caught.
-            </p>
-
-            <div class="mission-progress">
-              <div id="missionProgress"></div>
-            </div>
-
-            <small id="missionCount">0 / 30 seconds</small>
-          </div>
-
-          <div class="controls-note">
-            <b>KEYBOARD</b>
-            <p>
-              <kbd>WASD</kbd> Move<br>
-              <kbd>SPACE</kbd> Dash<br>
-              <kbd>P</kbd> Pause
-            </p>
-          </div>
-
-        </aside>
-      </section>
-
-      <!-- BOTTOM INFORMATION -->
-      <section class="bottom-grid">
-
-        <div class="bottom-card">
-          <div class="bottom-card-head">
-            <span class="eyebrow">EVOLUTION PROTOCOL</span>
-            <span class="muted-label">LEVEL UP IN-RUN</span>
-          </div>
-
-          <div class="upgrade-list">
-            <div class="upgrade">
-              <span class="upgrade-icon">⚡</span>
-              <div>
-                <b>PHASE DRIVE</b>
-                <small>Move faster through the void</small>
-              </div>
-            </div>
-
-            <div class="upgrade">
-              <span class="upgrade-icon">◇</span>
-              <div>
-                <b>REINFORCED HULL</b>
-                <small>Restore hull integrity</small>
-              </div>
-            </div>
-
-            <div class="upgrade">
-              <span class="upgrade-icon">✧</span>
-              <div>
-                <b>SHARD MAGNET</b>
-                <small>Pull energy shards closer</small>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="bottom-card records-card">
-          <div class="bottom-card-head">
-            <span class="eyebrow">PILOT RECORDS</span>
-            <span class="record-icon">⌁</span>
-          </div>
-
-          <div class="record-row">
-            <span>Best score</span>
-            <b id="bestBottom">000000</b>
-          </div>
-
-          <div class="record-row">
-            <span>Total runs</span>
-            <b id="runsBottom">00</b>
-          </div>
-
-          <div class="record-row">
-            <span>Lifetime shards</span>
-            <b id="shardsBottom">000</b>
-          </div>
-
-          <button class="reset-link" id="resetStatsBtn">
-            RESET LOCAL RECORDS ↻
-          </button>
-        </div>
-
-      </section>
-    </main>
-
-    <footer class="site-footer">
-      <span>VOID//RUSH <i>—</i> AN ARCADE SURVIVAL EXPERIMENT</span>
-      <span>BUILT FOR THE FEARLESS <b>✦</b></span>
+    <!-- Bottom status -->
+    <footer class="bottom-hud">
+      <span id="sensorStatus">MOTION SENSOR / STANDBY</span>
+      <span id="runStatus">AWAITING PILOT</span>
+      <span>SPACE: DASH · P: PAUSE</span>
     </footer>
 
-  </div>
-
-  <!-- UPGRADE MODAL -->
-  <div class="upgrade-modal hidden" id="upgradeModal"
-       role="dialog" aria-modal="true" aria-labelledby="upgradeTitle">
-
-    <div class="upgrade-dialog">
-      <div class="overlay-kicker">
-        <span class="live-dot"></span> EVOLUTION AVAILABLE
+    <!-- Start -->
+    <section class="overlay" id="startOverlay">
+      <div class="kicker">
+        <span class="live-dot"></span>
+        SIGNAL DETECTED
       </div>
 
-      <h2 id="upgradeTitle">CHOOSE YOUR <span>UPGRADE</span></h2>
-      <p class="upgrade-intro">The void is adapting. So should you.</p>
+      <h1>VOID<span>//</span>RUSH</h1>
 
-      <div class="upgrade-options" id="upgradeOptions"></div>
+      <p class="subtitle">
+        THE UNIVERSE IS COLLAPSING.<br>
+        <b>HOW LONG CAN YOU LAST?</b>
+      </p>
 
-      <small class="upgrade-foot">SELECT ONE PROTOCOL TO CONTINUE</small>
+      <div class="instructions">
+        <div>
+          <span class="instruction-icon">↔</span>
+          <span>TILT TO MOVE</span>
+        </div>
+        <div>
+          <span class="instruction-icon">✧</span>
+          <span>SPACE TO DASH</span>
+        </div>
+        <div>
+          <span class="instruction-icon">⟳</span>
+          <span>CALIBRATE ANYTIME</span>
+        </div>
+      </div>
+
+      <button class="primary-btn" id="startBtn">
+        INITIALIZE RUN <span>↗</span>
+      </button>
+
+      <p class="permission-note">
+        MOTION SENSOR ACCESS MAY BE REQUIRED
+      </p>
+    </section>
+
+    <!-- Pause -->
+    <section class="overlay hidden" id="pauseOverlay">
+      <div class="kicker">SYSTEM PAUSED</div>
+      <h2>TAKE A <span>BREATH.</span></h2>
+      <p class="subtitle">THE VOID CAN WAIT. FOR A MOMENT.</p>
+
+      <button class="primary-btn" id="resumeBtn">
+        RESUME RUN <span>▶</span>
+      </button>
+
+      <button class="text-btn" id="quitBtn">ABANDON RUN</button>
+    </section>
+
+    <!-- Game over -->
+    <section class="overlay hidden" id="gameOverOverlay">
+      <div class="kicker danger">SIGNAL LOST</div>
+      <h2>RUN <span>ENDED.</span></h2>
+
+      <p class="subtitle">THE VOID CLAIMS ANOTHER PILOT.</p>
+
+      <div class="final-stats">
+        <div>
+          <span>FINAL SCORE</span>
+          <strong id="finalScore">000000</strong>
+        </div>
+        <div>
+          <span>BEST COMBO</span>
+          <strong id="finalCombo">x1.0</strong>
+        </div>
+        <div>
+          <span>SURVIVAL</span>
+          <strong id="finalTime">00:00</strong>
+        </div>
+      </div>
+
+      <button class="primary-btn" id="retryBtn">
+        RUN IT BACK <span>↻</span>
+      </button>
+    </section>
+
+    <div id="toast" class="toast"></div>
+
+    <div id="orientationWarning">
+      ROTATE YOUR DEVICE TO LANDSCAPE
     </div>
-  </div>
 
-  <div class="toast" id="toast" role="status"></div>
+  </main>
 
   <script src="script.js"></script>
 </body>
