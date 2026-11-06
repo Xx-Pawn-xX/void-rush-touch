@@ -1,4 +1,3 @@
-
 (() => {
   "use strict";
 
@@ -6,6 +5,7 @@
 
   const canvas = $("gameCanvas");
   const ctx = canvas.getContext("2d");
+  const game = $("game");
 
   const ui = {
     score: $("scoreHud"),
@@ -15,7 +15,7 @@
     health: $("healthFill"),
     healthText: $("healthText"),
 
-    sensor: $("sensorStatus"),
+    controlStatus: $("controlStatus"),
     status: $("runStatus"),
 
     start: $("startOverlay"),
@@ -25,6 +25,9 @@
     finalScore: $("finalScore"),
     finalCombo: $("finalCombo"),
     finalTime: $("finalTime"),
+
+    dash: $("dashBtn"),
+    dashLabel: $("dashLabel"),
 
     toast: $("toast")
   };
@@ -51,20 +54,7 @@
   let toastTimer = 0;
 
   const keys = new Set();
-
-  const tilt = {
-    x: 0,
-    y: 0,
-    targetX: 0,
-    targetY: 0,
-
-    baseX: null,
-    baseY: null,
-
-    calibrated: false,
-    listening: false,
-    available: false
-  };
+  const touchDirections = new Set();
 
   let player;
   let enemies = [];
@@ -136,168 +126,98 @@
   }
 
   window.addEventListener("resize", resize);
+
   window.addEventListener("orientationchange", () => {
     setTimeout(resize, 200);
   });
 
   /* ==========================================
-     SENSOR CONTROLS
+     TOUCH INPUT
   ========================================== */
 
-  function sensorAngle() {
-    return (
-      screen.orientation?.angle ??
-      window.orientation ??
-      0
-    );
+  function clearTouchInput() {
+    touchDirections.clear();
+
+    document.querySelectorAll(".pad-btn").forEach(btn => {
+      btn.classList.remove("pressed");
+    });
+
+    ui.dash.classList.remove("pressed");
   }
 
-  function handleOrientation(event) {
-    if (event.beta === null || event.gamma === null) return;
+  document.querySelectorAll(".pad-btn").forEach(btn => {
+    const direction = btn.dataset.dir;
 
-    let rawX;
-    let rawY;
+    btn.addEventListener("pointerdown", event => {
+      if (mode !== "playing") return;
 
-    const angle = ((sensorAngle() % 360) + 360) % 360;
+      event.preventDefault();
 
-    if (angle === 90) {
-      rawX = event.beta;
-      rawY = event.gamma;
-    } else if (angle === 270) {
-      rawX = -event.beta;
-      rawY = -event.gamma;
-    } else if (angle === 180) {
-      rawX = -event.gamma;
-      rawY = -event.beta;
-    } else {
-      rawX = event.gamma;
-      rawY = event.beta;
+      touchDirections.add(direction);
+      btn.classList.add("pressed");
+
+      try {
+        btn.setPointerCapture(event.pointerId);
+      } catch (_) {}
+    });
+
+    function releaseDirection(event) {
+      touchDirections.delete(direction);
+      btn.classList.remove("pressed");
     }
 
-    tilt.available = true;
-
-    if (!tilt.calibrated) {
-      tilt.baseX = rawX;
-      tilt.baseY = rawY;
-
-      tilt.targetX = 0;
-      tilt.targetY = 0;
-
-      tilt.calibrated = true;
-
-      ui.sensor.textContent = "MOTION SENSOR / CALIBRATED";
-      return;
-    }
-
-    const sensitivity = 22;
-    const deadZone = 3;
-
-    function normalize(value) {
-      const amount = Math.abs(value);
-
-      if (amount < deadZone) return 0;
-
-      return Math.sign(value) *
-        clamp(
-          (amount - deadZone) / (sensitivity - deadZone),
-          0,
-          1
-        );
-    }
-
-    tilt.targetX = normalize(rawX - tilt.baseX);
-    tilt.targetY = normalize(rawY - tilt.baseY);
-  }
-
-  async function enableTilt() {
-    if (tilt.listening) return true;
-
-    if (!("DeviceOrientationEvent" in window)) {
-      ui.sensor.textContent = "MOTION SENSOR / UNSUPPORTED";
-      showToast("MOTION SENSOR NOT AVAILABLE");
-      return false;
-    }
-
-    try {
-      if (
-        typeof DeviceOrientationEvent.requestPermission === "function"
-      ) {
-        const permission =
-          await DeviceOrientationEvent.requestPermission();
-
-        if (permission !== "granted") {
-          ui.sensor.textContent = "MOTION / PERMISSION DENIED";
-          showToast("MOTION ACCESS DENIED — KEYBOARD AVAILABLE");
-          return false;
-        }
-      }
-
-      window.addEventListener(
-        "deviceorientation",
-        handleOrientation,
-        true
-      );
-
-      tilt.listening = true;
-      tilt.calibrated = false;
-
-      ui.sensor.textContent = "MOTION SENSOR / WAITING";
-
-      return true;
-
-    } catch (error) {
-      console.error("Motion sensor error:", error);
-
-      ui.sensor.textContent = "MOTION SENSOR / ERROR";
-      showToast("SENSOR ERROR — KEYBOARD AVAILABLE");
-
-      return false;
-    }
-  }
-
-  function calibrateTilt() {
-    tilt.calibrated = false;
-
-    tilt.x = 0;
-    tilt.y = 0;
-
-    tilt.targetX = 0;
-    tilt.targetY = 0;
-
-    ui.sensor.textContent = "CALIBRATING...";
-
-    showToast("HOLD YOUR IPAD LEVEL");
-  }
-
-  function updateTilt(dt) {
-    const smoothing = 1 - Math.pow(.0001, dt);
-
-    tilt.x += (tilt.targetX - tilt.x) * smoothing;
-    tilt.y += (tilt.targetY - tilt.y) * smoothing;
-  }
+    btn.addEventListener("pointerup", releaseDirection);
+    btn.addEventListener("pointercancel", releaseDirection);
+    btn.addEventListener("lostpointercapture", releaseDirection);
+  });
 
   /* ==========================================
-     INPUT
+     INPUT DIRECTION
   ========================================== */
 
   function getInput() {
-    let x = tilt.listening ? tilt.x : 0;
-    let y = tilt.listening ? tilt.y : 0;
+    let x =
+      (touchDirections.has("right") ? 1 : 0) -
+      (touchDirections.has("left") ? 1 : 0);
+
+    let y =
+      (touchDirections.has("down") ? 1 : 0) -
+      (touchDirections.has("up") ? 1 : 0);
 
     const keyX =
-      (keys.has("ArrowRight") || keys.has("d") ? 1 : 0) -
-      (keys.has("ArrowLeft") || keys.has("a") ? 1 : 0);
+      (
+        keys.has("ArrowRight") ||
+        keys.has("d") ||
+        keys.has("D") ? 1 : 0
+      ) -
+      (
+        keys.has("ArrowLeft") ||
+        keys.has("a") ||
+        keys.has("A") ? 1 : 0
+      );
 
     const keyY =
-      (keys.has("ArrowDown") || keys.has("s") ? 1 : 0) -
-      (keys.has("ArrowUp") || keys.has("w") ? 1 : 0);
+      (
+        keys.has("ArrowDown") ||
+        keys.has("s") ||
+        keys.has("S") ? 1 : 0
+      ) -
+      (
+        keys.has("ArrowUp") ||
+        keys.has("w") ||
+        keys.has("W") ? 1 : 0
+      );
 
-    if (keyX || keyY) {
+    // Keyboard input takes priority when used.
+
+    if (keyX !== 0 || keyY !== 0) {
       x = keyX;
       y = keyY;
     }
 
     const magnitude = Math.hypot(x, y);
+
+    // Prevent diagonal movement from being faster.
 
     if (magnitude > 1) {
       x /= magnitude;
@@ -307,12 +227,21 @@
     return { x, y };
   }
 
+  /* ==========================================
+     KEYBOARD
+  ========================================== */
+
   window.addEventListener("keydown", event => {
     const key = event.key;
 
     if (
-      ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "]
-      .includes(key)
+      [
+        "ArrowUp",
+        "ArrowDown",
+        "ArrowLeft",
+        "ArrowRight",
+        " "
+      ].includes(key)
     ) {
       event.preventDefault();
     }
@@ -346,6 +275,7 @@
 
   window.addEventListener("blur", () => {
     keys.clear();
+    clearTouchInput();
 
     if (mode === "playing") {
       pauseRun();
@@ -389,8 +319,11 @@
     dashCooldown = 0;
     dashTime = 0;
 
+    dashDirection = { x: 0, y: -1 };
+
     screenShake = 0;
 
+    clearTouchInput();
     updateHUD();
   }
 
@@ -400,6 +333,8 @@
 
   function setMode(next) {
     mode = next;
+
+    game.dataset.mode = next;
 
     ui.start.classList.toggle("hidden", next !== "menu");
     ui.pause.classList.toggle("hidden", next !== "paused");
@@ -411,15 +346,17 @@
       paused: "SYSTEM PAUSED",
       over: "SIGNAL LOST"
     }[next];
+
+    if (next !== "playing") {
+      clearTouchInput();
+      keys.clear();
+    }
   }
 
-  async function beginRun() {
+  function beginRun() {
     if (mode === "playing") return;
 
-    await enableTilt();
-
     resetGame();
-    calibrateTilt();
 
     setMode("playing");
 
@@ -466,7 +403,9 @@
     ui.finalTime.textContent = timeText(elapsed);
     ui.best.textContent = pad(records.best);
 
-    showToast(newBest ? "NEW PERSONAL BEST!" : "RUN TERMINATED");
+    showToast(
+      newBest ? "NEW PERSONAL BEST!" : "RUN TERMINATED"
+    );
 
     cancelAnimationFrame(raf);
   }
@@ -513,7 +452,33 @@
     );
 
     showToast("PHASE DASH");
+
+    updateHUD();
   }
+
+  // Touch dash button
+
+  ui.dash.addEventListener("pointerdown", event => {
+    if (mode !== "playing") return;
+
+    event.preventDefault();
+
+    activateDash();
+
+    ui.dash.classList.add("pressed");
+
+    try {
+      ui.dash.setPointerCapture(event.pointerId);
+    } catch (_) {}
+  });
+
+  function releaseDash() {
+    ui.dash.classList.remove("pressed");
+  }
+
+  ui.dash.addEventListener("pointerup", releaseDash);
+  ui.dash.addEventListener("pointercancel", releaseDash);
+  ui.dash.addEventListener("lostpointercapture", releaseDash);
 
   /* ==========================================
      SPAWNING
@@ -538,13 +503,16 @@
       y = rand(0, H);
     }
 
-    const elite = Math.random() < Math.min(.12 + sector * .015, .4);
+    const elite =
+      Math.random() < Math.min(.12 + sector * .015, .4);
 
     enemies.push({
       x,
       y,
       radius: elite ? 17 : rand(9, 14),
-      speed: elite ? rand(75, 105) : rand(55, 90) + sector * 3,
+      speed: elite
+        ? rand(75, 105)
+        : rand(55, 90) + sector * 3,
       elite,
       rotation: rand(0, 6.28),
       color: elite ? "#f05b70" : "#a879ff"
@@ -640,8 +608,6 @@
 
     elapsed += dt;
 
-    updateTilt(dt);
-
     const input = getInput();
 
     dashCooldown = Math.max(0, dashCooldown - dt);
@@ -691,7 +657,11 @@
 
     if (nextSector !== sector) {
       sector = nextSector;
-      showToast(`SECTOR ${String(sector).padStart(2, "0")}`);
+
+      showToast(
+        `SECTOR ${String(sector).padStart(2, "0")}`
+      );
+
       updateHUD();
     }
 
@@ -769,7 +739,10 @@
         player.y - shard.y
       );
 
-      if (distance < player.radius + shard.radius + 3) {
+      if (
+        distance <
+        player.radius + shard.radius + 3
+      ) {
         collectShard(i);
       }
     }
@@ -1037,6 +1010,19 @@
       ui.health.style.background =
         "linear-gradient(90deg,#36d9a0,#7ef0c5)";
     }
+
+    // Dash cooldown display
+
+    if (dashCooldown > 0) {
+      ui.dashLabel.textContent =
+        `${dashCooldown.toFixed(1)}s`;
+
+      ui.dash.classList.add("cooldown");
+    } else {
+      ui.dashLabel.textContent = "READY";
+
+      ui.dash.classList.remove("cooldown");
+    }
   }
 
   function showToast(message) {
@@ -1084,15 +1070,7 @@
   $("quitBtn").addEventListener("click", () => {
     cancelAnimationFrame(raf);
     setMode("menu");
-  });
-
-  $("calibrateBtn").addEventListener("click", () => {
-    if (!tilt.listening) {
-      showToast("START A RUN TO ENABLE MOTION");
-      return;
-    }
-
-    calibrateTilt();
+    render(performance.now() / 1000);
   });
 
   /* ==========================================
