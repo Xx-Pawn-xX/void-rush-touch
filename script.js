@@ -1,8 +1,8 @@
+
 (() => {
   "use strict";
 
   const $ = id => document.getElementById(id);
-
   const canvas = $("gameCanvas");
   const ctx = canvas.getContext("2d");
 
@@ -10,39 +10,30 @@
     score: $("scoreHud"),
     combo: $("comboHud"),
     sector: $("sectorHud"),
-
     health: $("healthFill"),
     healthText: $("healthText"),
-
     bestSide: $("bestSide"),
     runsSide: $("runsSide"),
     energy: $("energySide"),
     kills: $("killsSide"),
     near: $("nearSide"),
-
     bestBottom: $("bestBottom"),
     runsBottom: $("runsBottom"),
     shardsBottom: $("shardsBottom"),
-
     state: $("runState"),
     status: $("statusText"),
     footer: $("footerState"),
-
     bars: $("threatBars"),
-
     missionProgress: $("missionProgress"),
     missionCount: $("missionCount"),
     missionTitle: $("missionTitle"),
     missionDesc: $("missionDesc"),
-
     start: $("startOverlay"),
     pause: $("pauseOverlay"),
     over: $("gameOverOverlay"),
-
     levelToast: $("levelToast"),
     modal: $("upgradeModal"),
     options: $("upgradeOptions"),
-
     toast: $("toast"),
     dashLabel: $("dashLabel"),
     dashFlash: $("dashFlash")
@@ -65,26 +56,32 @@
     };
   } catch (_) {}
 
-  let W = 900;
-  let H = 560;
-  let dpr = 1;
-
-  let last = 0;
-  let raf = 0;
-  let toastTimer = 0;
-  let levelTimer = 0;
+  let W = 900, H = 560, dpr = 1;
+  let last = 0, raf = 0;
+  let toastTimer = 0, levelTimer = 0;
 
   let mode = "menu";
   let soundOn = true;
   let audio = null;
 
-  let keys = new Set();
-  let touchDirs = new Set();
+  const keys = new Set();
+
+  // Analog joystick state: -1 to 1 on each axis.
+  const joystick = {
+    active: false,
+    pointerId: null,
+    x: 0,
+    y: 0,
+    maxRadius: 0,
+    deadZone: 0.12
+  };
+
+  const joystickElement = $("joystick");
+  const joystickStick = $("joystickStick");
 
   let entities = [];
   let particles = [];
   let floaters = [];
-
   let player;
 
   let score = 0;
@@ -113,7 +110,6 @@
   };
 
   const rand = (a, b) => Math.random() * (b - a) + a;
-
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 
   const pad = (n, size = 6) =>
@@ -137,10 +133,8 @@
   function updateRecordUI() {
     ui.bestSide.textContent = pad(records.best);
     ui.bestBottom.textContent = pad(records.best);
-
     ui.runsSide.textContent = pad(records.runs, 2);
     ui.runsBottom.textContent = pad(records.runs, 2);
-
     ui.shardsBottom.textContent = pad(records.lifetimeShards, 3);
   }
 
@@ -192,9 +186,7 @@
     try {
       audio ||= new (window.AudioContext || window.webkitAudioContext)();
 
-      if (audio.state === "suspended") {
-        audio.resume();
-      }
+      if (audio.state === "suspended") audio.resume();
 
       const osc = audio.createOscillator();
       const gain = audio.createGain();
@@ -214,6 +206,131 @@
       osc.start();
       osc.stop(audio.currentTime + duration);
     } catch (_) {}
+  }
+
+  /* =====================================================
+     ANALOG JOYSTICK
+  ===================================================== */
+
+  function resetJoystick() {
+    joystick.active = false;
+    joystick.pointerId = null;
+    joystick.x = 0;
+    joystick.y = 0;
+
+    if (joystickStick) {
+      joystickStick.style.transform = "translate(-50%, -50%)";
+    }
+
+    if (joystickElement) {
+      joystickElement.classList.remove("active");
+    }
+  }
+
+  function updateJoystick(e) {
+    if (!joystickElement || !joystickStick) return;
+
+    const rect = joystickElement.getBoundingClientRect();
+
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    const maxRadius = rect.width * 0.32;
+
+    let dx = e.clientX - centerX;
+    let dy = e.clientY - centerY;
+
+    const distance = Math.hypot(dx, dy);
+
+    if (distance > maxRadius) {
+      dx = dx / distance * maxRadius;
+      dy = dy / distance * maxRadius;
+    }
+
+    const normalizedX = dx / maxRadius;
+    const normalizedY = dy / maxRadius;
+
+    const magnitude = Math.hypot(normalizedX, normalizedY);
+
+    if (magnitude < joystick.deadZone) {
+      joystick.x = 0;
+      joystick.y = 0;
+    } else {
+      joystick.x = normalizedX;
+      joystick.y = normalizedY;
+    }
+
+    joystickStick.style.transform =
+      `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+  }
+
+  if (joystickElement) {
+    joystickElement.addEventListener("pointerdown", e => {
+      if (mode !== "playing") return;
+
+      e.preventDefault();
+
+      joystick.active = true;
+      joystick.pointerId = e.pointerId;
+
+      joystickElement.classList.add("active");
+
+      try {
+        joystickElement.setPointerCapture(e.pointerId);
+      } catch (_) {}
+
+      updateJoystick(e);
+    });
+
+    joystickElement.addEventListener("pointermove", e => {
+      if (!joystick.active || e.pointerId !== joystick.pointerId) return;
+
+      e.preventDefault();
+      updateJoystick(e);
+    });
+
+    const releaseJoystick = e => {
+      if (e.pointerId !== joystick.pointerId) return;
+      resetJoystick();
+    };
+
+    joystickElement.addEventListener("pointerup", releaseJoystick);
+    joystickElement.addEventListener("pointercancel", releaseJoystick);
+    joystickElement.addEventListener("lostpointercapture", () => {
+      if (joystick.active) resetJoystick();
+    });
+  }
+
+  /* =====================================================
+     INPUT DIRECTION
+  ===================================================== */
+
+  function getInputDirection() {
+    let x = joystick.active ? joystick.x : 0;
+    let y = joystick.active ? joystick.y : 0;
+
+    const keyX =
+      (keys.has("ArrowRight") || keys.has("d") || keys.has("D") ? 1 : 0) -
+      (keys.has("ArrowLeft") || keys.has("a") || keys.has("A") ? 1 : 0);
+
+    const keyY =
+      (keys.has("ArrowDown") || keys.has("s") || keys.has("S") ? 1 : 0) -
+      (keys.has("ArrowUp") || keys.has("w") || keys.has("W") ? 1 : 0);
+
+    // Keyboard takes priority while a key is pressed.
+    if (keyX !== 0 || keyY !== 0) {
+      x = keyX;
+      y = keyY;
+    }
+
+    const magnitude = Math.hypot(x, y);
+
+    if (magnitude > 1) {
+      x /= magnitude;
+      y /= magnitude;
+    }
+
+    return { x, y };
   }
 
   /* =====================================================
@@ -255,7 +372,7 @@
     floaters = [];
 
     keys.clear();
-    touchDirs.clear();
+    resetJoystick();
 
     score = 0;
     energy = 0;
@@ -285,22 +402,15 @@
     player = {
       x: W / 2,
       y: H / 2,
-
       r: 10,
-
       vx: 0,
       vy: 0,
-
       hp: 100,
       maxHp: 100,
-
       speed: 220,
-
       dashCooldown: 0,
       dashTime: 0,
-
       invuln: 1.2,
-
       trail: []
     };
 
@@ -313,7 +423,6 @@
     if (mode === "playing") return;
 
     cancelAnimationFrame(raf);
-
     resetRun();
 
     ui.start.classList.add("hidden");
@@ -326,7 +435,6 @@
     beep(580, .1, "triangle");
 
     last = performance.now();
-
     raf = requestAnimationFrame(loop);
   }
 
@@ -337,20 +445,17 @@
   function pauseRun() {
     if (mode === "playing") {
       setMode("paused");
-
       ui.pause.classList.remove("hidden");
 
       keys.clear();
-      touchDirs.clear();
+      resetJoystick();
 
       clearPressedButtons();
-
       beep(260, .08);
     } else if (mode === "paused") {
       ui.pause.classList.add("hidden");
 
       setMode("playing");
-
       last = performance.now();
 
       raf = requestAnimationFrame(loop);
@@ -358,9 +463,7 @@
   }
 
   function clearPressedButtons() {
-    document.querySelectorAll(".pad-btn").forEach(btn => {
-      btn.classList.remove("pressed");
-    });
+    $("dashBtn").classList.remove("pressed");
   }
 
   /* =====================================================
@@ -373,16 +476,13 @@
     cancelAnimationFrame(raf);
 
     setMode("over");
-
     ui.over.classList.remove("hidden");
 
     records.runs++;
 
     const newBest = score > records.best;
 
-    if (newBest) {
-      records.best = score;
-    }
+    if (newBest) records.best = score;
 
     records.lifetimeShards += energy;
 
@@ -401,8 +501,7 @@
     }
 
     keys.clear();
-    touchDirs.clear();
-
+    resetJoystick();
     clearPressedButtons();
 
     draw();
@@ -415,8 +514,7 @@
   function spawnEnemy() {
     const edge = Math.floor(rand(0, 4));
 
-    let x;
-    let y;
+    let x, y;
 
     if (edge === 0) {
       x = rand(0, W);
@@ -448,25 +546,19 @@
     entities.push({
       kind: "enemy",
       type,
-
       x,
       y,
-
       r: type === "hunter" ? 12 :
          type === "drifter" ? 8 : 10,
-
       vx: 0,
       vy: 0,
-
       speed,
       age: 0,
       phase: rand(0, 7),
-
       color:
         type === "hunter" ? "#ff557a" :
         type === "drifter" ? "#c27aff" :
         "#ff8c6b",
-
       near: false
     });
   }
@@ -501,15 +593,11 @@
       const s = rand(power * .25, power);
 
       particles.push({
-        x,
-        y,
-
+        x, y,
         vx: Math.cos(a) * s,
         vy: Math.sin(a) * s,
-
         life: rand(.2, .65),
         max: .65,
-
         r: rand(1, 3),
         color
       });
@@ -518,10 +606,7 @@
 
   function addFloater(x, y, text, color) {
     floaters.push({
-      x,
-      y,
-      text,
-      color,
+      x, y, text, color,
       life: .8,
       max: .8
     });
@@ -536,15 +621,10 @@
       return;
     }
 
-    let dx =
-      (keys.has("ArrowRight") || keys.has("d") || keys.has("D") || touchDirs.has("right") ? 1 : 0) -
-      (keys.has("ArrowLeft") || keys.has("a") || keys.has("A") || touchDirs.has("left") ? 1 : 0);
+    // Dash in the current joystick or keyboard direction.
+    let { x: dx, y: dy } = getInputDirection();
 
-    let dy =
-      (keys.has("ArrowDown") || keys.has("s") || keys.has("S") || touchDirs.has("down") ? 1 : 0) -
-      (keys.has("ArrowUp") || keys.has("w") || keys.has("W") || touchDirs.has("up") ? 1 : 0);
-
-    if (!dx && !dy) {
+    if (Math.hypot(dx, dy) < .01) {
       dx = player.vx;
       dy = player.vy;
 
@@ -574,9 +654,7 @@
     burst(player.x, player.y, "#42d9ff", 14, 170);
 
     ui.dashFlash.classList.remove("flash");
-
     void ui.dashFlash.offsetWidth;
-
     ui.dashFlash.classList.add("flash");
 
     beep(260, .12, "sawtooth", .025);
@@ -590,22 +668,17 @@
     if (player.invuln > 0 || mode !== "playing") return;
 
     player.hp = Math.max(0, player.hp - amount);
-
     player.invuln = .85;
 
     screenShake = 9;
-
     combo = 1;
 
     burst(player.x, player.y, "#ff557a", 15, 180);
-
     beep(100, .18, "sawtooth", .05);
 
     updateHUD();
 
-    if (player.hp <= 0) {
-      endRun();
-    }
+    if (player.hp <= 0) endRun();
   }
 
   /* =====================================================
@@ -620,7 +693,6 @@
     );
 
     combo = Math.min(9.9, combo + .25);
-
     bestCombo = Math.max(bestCombo, combo);
 
     burst(e.x, e.y, "#42d9ff", 9, 100);
@@ -634,7 +706,6 @@
 
     beep(520 + energy % 5 * 70, .055, "sine", .025);
 
-    // Every 8 shards restores 5 hull.
     if (energy % 8 === 0 && player.hp < 100) {
       player.hp = Math.min(100, player.hp + 5);
 
@@ -646,7 +717,6 @@
       );
     }
 
-    // Upgrade every 10 shards.
     if (energy > 0 && energy % 10 === 0) {
       openUpgrade();
     }
@@ -668,20 +738,9 @@
       showLevelToast();
     }
 
-    let ix =
-      (keys.has("ArrowRight") || keys.has("d") || keys.has("D") || touchDirs.has("right") ? 1 : 0) -
-      (keys.has("ArrowLeft") || keys.has("a") || keys.has("A") || touchDirs.has("left") ? 1 : 0);
-
-    let iy =
-      (keys.has("ArrowDown") || keys.has("s") || keys.has("S") || touchDirs.has("down") ? 1 : 0) -
-      (keys.has("ArrowUp") || keys.has("w") || keys.has("W") || touchDirs.has("up") ? 1 : 0);
-
-    const mag = Math.hypot(ix, iy);
-
-    if (mag > 0) {
-      ix /= mag;
-      iy /= mag;
-    }
+    const input = getInputDirection();
+    const ix = input.x;
+    const iy = input.y;
 
     const targetSpeed = player.speed + upgrades.speed * 22;
 
@@ -715,14 +774,11 @@
       life: .3
     });
 
-    if (player.trail.length > 12) {
-      player.trail.shift();
-    }
+    if (player.trail.length > 12) player.trail.shift();
 
     player.trail.forEach(t => t.life -= dt);
     player.trail = player.trail.filter(t => t.life > 0);
 
-    // Enemy spawning
     spawnTimer -= dt;
 
     if (spawnTimer <= 0) {
@@ -733,7 +789,6 @@
         rand(.7, 1.25);
     }
 
-    // Shard spawning
     shardTimer -= dt;
 
     if (shardTimer <= 0) {
@@ -741,7 +796,6 @@
       shardTimer = rand(1.3, 2.4);
     }
 
-    // Update entities
     for (let i = entities.length - 1; i >= 0; i--) {
       const e = entities[i];
 
@@ -750,7 +804,6 @@
       if (e.kind === "enemy") {
         const dx = player.x - e.x;
         const dy = player.y - e.y;
-
         const d = Math.hypot(dx, dy) || 1;
 
         if (e.type === "drifter") {
@@ -784,14 +837,12 @@
           player.y - e.y
         );
 
-        // Collision
         if (gap < e.r + player.r + 1) {
           if (player.dashTime <= 0) {
             takeDamage(e.type === "hunter" ? 30 : 22);
           }
 
           burst(e.x, e.y, e.color, 8, 90);
-
           entities.splice(i, 1);
 
           kills++;
@@ -800,7 +851,6 @@
           continue;
         }
 
-        // Near miss
         if (
           !e.near &&
           gap < e.r + player.r + 18 &&
@@ -811,9 +861,7 @@
           lastNear = elapsed;
 
           nearMisses++;
-
           combo = Math.min(9.9, combo + .15);
-
           score += Math.round(35 * combo);
 
           addFloater(
@@ -824,31 +872,23 @@
           );
         }
 
-        // Remove distant enemies
         if (
-          e.x < -55 ||
-          e.x > W + 55 ||
-          e.y < -55 ||
-          e.y > H + 55
+          e.x < -55 || e.x > W + 55 ||
+          e.y < -55 || e.y > H + 55
         ) {
           entities.splice(i, 1);
         }
 
       } else {
-        // Shard attraction
         e.phase += dt * 3;
 
         const dx = player.x - e.x;
         const dy = player.y - e.y;
-
         const d = Math.hypot(dx, dy) || 1;
 
         if (d < 115 + upgrades.magnet * 35) {
-          e.x +=
-            dx / d * (90 + upgrades.magnet * 40) * dt;
-
-          e.y +=
-            dy / d * (90 + upgrades.magnet * 40) * dt;
+          e.x += dx / d * (90 + upgrades.magnet * 40) * dt;
+          e.y += dy / d * (90 + upgrades.magnet * 40) * dt;
         }
 
         if (d < e.r + player.r + 3) {
@@ -862,7 +902,6 @@
       if (mode !== "playing") return;
     }
 
-    // Particles
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
 
@@ -874,19 +913,14 @@
 
       p.life -= dt;
 
-      if (p.life <= 0) {
-        particles.splice(i, 1);
-      }
+      if (p.life <= 0) particles.splice(i, 1);
     }
 
-    // Floating text
     for (let i = floaters.length - 1; i >= 0; i--) {
       floaters[i].y -= 30 * dt;
       floaters[i].life -= dt;
 
-      if (floaters[i].life <= 0) {
-        floaters.splice(i, 1);
-      }
+      if (floaters[i].life <= 0) floaters.splice(i, 1);
     }
 
     screenShake = Math.max(0, screenShake - dt * 24);
@@ -931,14 +965,10 @@
 
   function updateHUD() {
     ui.score.textContent = pad(score);
-
     ui.combo.textContent = `x${combo.toFixed(1)}`;
-
     ui.sector.textContent = pad(sector, 2);
 
-    ui.health.style.width =
-      `${player ? player.hp : 100}%`;
-
+    ui.health.style.width = `${player ? player.hp : 100}%`;
     ui.healthText.textContent =
       `${Math.round(player ? player.hp : 100)}%`;
 
@@ -961,9 +991,7 @@
         : `${player.dashCooldown.toFixed(1)}s`;
 
     $("dashBtn").style.opacity =
-      !player || player.dashCooldown <= 0
-        ? "1"
-        : ".65";
+      !player || player.dashCooldown <= 0 ? "1" : ".65";
   }
 
   function updateMission() {
@@ -1011,7 +1039,6 @@
 
     ctx.strokeStyle = "#3a5b8020";
     ctx.lineWidth = 1;
-
     ctx.beginPath();
 
     for (let x = -step; x < W + step; x += step) {
@@ -1045,17 +1072,13 @@
       `rgba(66,217,255,${.08 + Math.sin(elapsed) * .025})`;
 
     ctx.lineWidth = 1;
-
     ctx.beginPath();
 
     ctx.ellipse(
-      W / 2,
-      H / 2,
+      W / 2, H / 2,
       W * .29 * pulse,
       H * .33 * pulse,
-      0,
-      0,
-      Math.PI * 2
+      0, 0, Math.PI * 2
     );
 
     ctx.stroke();
@@ -1079,13 +1102,11 @@
 
     drawBackground();
 
-    // Entities
     entities.forEach(e => {
       if (e.kind === "shard") {
         const pulse = 1 + Math.sin(e.phase) * .2;
 
         ctx.save();
-
         ctx.translate(e.x, e.y);
         ctx.rotate(e.phase * .3);
 
@@ -1097,21 +1118,18 @@
         ctx.lineWidth = 1.4;
 
         ctx.beginPath();
-
         ctx.moveTo(0, -e.r * pulse);
         ctx.lineTo(e.r * pulse, 0);
         ctx.lineTo(0, e.r * pulse);
         ctx.lineTo(-e.r * pulse, 0);
-
         ctx.closePath();
+
         ctx.fill();
         ctx.stroke();
-
         ctx.restore();
 
       } else {
         ctx.save();
-
         ctx.translate(e.x, e.y);
 
         ctx.rotate(
@@ -1133,7 +1151,6 @@
 
           for (let j = 0; j < 6; j++) {
             const a = j * Math.PI / 3;
-
             const x = Math.cos(a) * e.r;
             const y = Math.sin(a) * e.r;
 
@@ -1147,13 +1164,12 @@
 
         } else {
           ctx.beginPath();
-
           ctx.moveTo(e.r + 3, 0);
           ctx.lineTo(-e.r * .7, -e.r * .8);
           ctx.lineTo(-e.r * .45, 0);
           ctx.lineTo(-e.r * .7, e.r * .8);
-
           ctx.closePath();
+
           ctx.fill();
           ctx.stroke();
         }
@@ -1162,7 +1178,6 @@
       }
     });
 
-    // Particles
     particles.forEach(p => {
       ctx.globalAlpha = clamp(p.life / (p.max || .65), 0, 1);
 
@@ -1178,7 +1193,6 @@
     ctx.globalAlpha = 1;
     ctx.shadowBlur = 0;
 
-    // Floating text
     floaters.forEach(f => {
       ctx.globalAlpha = clamp(f.life / f.max, 0, 1);
 
@@ -1195,23 +1209,17 @@
     ctx.globalAlpha = 1;
     ctx.shadowBlur = 0;
 
-    // Player
     if (player) {
       player.trail.forEach(t => {
         ctx.globalAlpha = (t.life / .3) * .23;
-
         ctx.fillStyle = "#42d9ff";
 
         ctx.beginPath();
-
         ctx.arc(
-          t.x,
-          t.y,
+          t.x, t.y,
           player.r * (t.life / .3),
-          0,
-          Math.PI * 2
+          0, Math.PI * 2
         );
-
         ctx.fill();
       });
 
@@ -1223,7 +1231,6 @@
 
       if (!flicker) {
         ctx.save();
-
         ctx.translate(player.x, player.y);
 
         ctx.rotate(
@@ -1238,25 +1245,20 @@
         ctx.lineWidth = 1.7;
 
         ctx.beginPath();
-
         ctx.moveTo(0, -13);
         ctx.lineTo(9, 9);
         ctx.lineTo(0, 5);
         ctx.lineTo(-9, 9);
-
         ctx.closePath();
+
         ctx.fill();
         ctx.stroke();
 
-        // Engine flame
         ctx.fillStyle = "#42d9ff";
-
         ctx.beginPath();
-
         ctx.moveTo(-3, 8);
         ctx.lineTo(0, rand(12, 18));
         ctx.lineTo(3, 8);
-
         ctx.fill();
 
         ctx.restore();
@@ -1267,15 +1269,12 @@
             : "#68809a50";
 
         ctx.lineWidth = 1;
-
         ctx.beginPath();
 
         ctx.arc(
-          player.x,
-          player.y,
+          player.x, player.y,
           17 + Math.sin(elapsed * 5) * 1.5,
-          0,
-          Math.PI * 2
+          0, Math.PI * 2
         );
 
         ctx.stroke();
@@ -1293,7 +1292,6 @@
     if (mode !== "playing") return;
 
     const dt = Math.min(.033, (now - last) / 1000 || 0);
-
     last = now;
 
     update(dt);
@@ -1350,8 +1348,8 @@
     if (mode !== "playing") return;
 
     setMode("upgrade");
-
     cancelAnimationFrame(raf);
+    resetJoystick();
 
     const choices = [...upgradePool]
       .sort(() => Math.random() - .5)
@@ -1377,7 +1375,6 @@
     });
 
     ui.modal.classList.remove("hidden");
-
     beep(740, .13, "triangle", .035);
   }
 
@@ -1388,10 +1385,8 @@
       player.hp = Math.min(100, player.hp + 35);
 
       addFloater(
-        player.x,
-        player.y - 20,
-        "HULL REPAIRED",
-        "#60f4c5"
+        player.x, player.y - 20,
+        "HULL REPAIRED", "#60f4c5"
       );
     }
 
@@ -1400,15 +1395,12 @@
     }
 
     ui.modal.classList.add("hidden");
-
     setMode("playing");
 
     updateHUD();
-
     showToast(`${u.name} PROTOCOL INSTALLED`);
 
     last = performance.now();
-
     raf = requestAnimationFrame(loop);
   }
 
@@ -1427,12 +1419,10 @@
     ui.start.classList.remove("hidden");
 
     keys.clear();
-    touchDirs.clear();
-
+    resetJoystick();
     clearPressedButtons();
 
     setMode("menu");
-
     draw();
   });
 
@@ -1445,55 +1435,33 @@
     soundOn = !soundOn;
 
     $("soundLabel").textContent = soundOn ? "ON" : "OFF";
-
     $("soundBtn").style.opacity = soundOn ? "1" : ".65";
 
-    if (soundOn) {
-      beep(500, .06);
-    }
+    if (soundOn) beep(500, .06);
   });
 
   $("resetStatsBtn").addEventListener("click", () => {
     if (confirm("Reset all local VOID//RUSH records?")) {
       records = initialRecords();
-
       saveRecords();
-
       showToast("LOCAL RECORDS RESET");
     }
   });
 
   /* =====================================================
-     TOUCH DIRECTIONAL CONTROLS
+     DASH BUTTON TOUCH FEEDBACK
   ===================================================== */
 
-  document.querySelectorAll("[data-dir]").forEach(btn => {
-    const dir = btn.dataset.dir;
+  $("dashBtn").addEventListener("pointerup", () => {
+    $("dashBtn").classList.remove("pressed");
+  });
 
-    const down = e => {
-      e.preventDefault();
+  $("dashBtn").addEventListener("pointercancel", () => {
+    $("dashBtn").classList.remove("pressed");
+  });
 
-      touchDirs.add(dir);
-
-      btn.classList.add("pressed");
-
-      try {
-        btn.setPointerCapture(e.pointerId);
-      } catch (_) {}
-    };
-
-    const up = e => {
-      e.preventDefault();
-
-      touchDirs.delete(dir);
-
-      btn.classList.remove("pressed");
-    };
-
-    btn.addEventListener("pointerdown", down);
-    btn.addEventListener("pointerup", up);
-    btn.addEventListener("pointercancel", up);
-    btn.addEventListener("lostpointercapture", up);
+  $("dashBtn").addEventListener("pointerdown", () => {
+    $("dashBtn").classList.add("pressed");
   });
 
   /* =====================================================
@@ -1519,17 +1487,12 @@
       if (!e.repeat && ["playing", "paused"].includes(mode)) {
         pauseRun();
       }
-
       return;
     }
 
     keys.add(key);
 
-    if (key === "Enter" && mode === "menu") {
-      startRun();
-    }
-
-    if (key === "Enter" && mode === "over") {
+    if (key === "Enter" && ["menu", "over"].includes(mode)) {
       startRun();
     }
   });
@@ -1540,13 +1503,10 @@
 
   window.addEventListener("blur", () => {
     keys.clear();
-    touchDirs.clear();
-
+    resetJoystick();
     clearPressedButtons();
 
-    if (mode === "playing") {
-      pauseRun();
-    }
+    if (mode === "playing") pauseRun();
   });
 
   document.addEventListener("visibilitychange", () => {
@@ -1560,14 +1520,9 @@
   ===================================================== */
 
   updateRecordUI();
-
   resize();
-
   resetRun();
-
   setMode("menu");
-
   draw();
 
 })();
-  
